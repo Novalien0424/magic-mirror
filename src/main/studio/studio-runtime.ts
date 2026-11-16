@@ -258,7 +258,7 @@ export function createStudioRuntime(input: {
     let result: PortraitImageResult
     let selectedConcept: StudioConcept | undefined
     try {
-      const selected = await input.concepts.select({ operation: kind === 'generate' ? 'initial' : r.revisionMode ?? 'refine',
+      const selected = await input.concepts.select({ operation: kind === 'generate' ? 'initial' : r.revisionMode ?? 'refine', direction: r.experience.studio.conceptDirection,
         ...(kind === 'generate' || r.revisionMode === 'reimagine' ? { answers } : {}),
         ...(r.concept ? { previous: r.concept } : {}), ...(r.change ? { change: r.change } : {}), signal: abort.signal })
       if (run !== r || abort.signal.aborted) return

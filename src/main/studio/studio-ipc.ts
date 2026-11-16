@@ -267,7 +267,7 @@ export function registerStudioIpc(deps: {
     if (!experience) return { ok: true, value: { status: await status(), test: { ok: false, code: 'studio_config_unavailable', elapsedMs: 0 } } }
     const answers = experience.studio.questions.map((question, index) => ({ question: question.en, ...(question.imageLine ? { context: question.imageLine } : {}),
       answer: STUDIO_SAMPLE_ANSWERS[index % STUDIO_SAMPLE_ANSWERS.length]! }))
-    const selected = await deps.images.concepts.select({ operation: 'initial', answers })
+    const selected = await deps.images.concepts.select({ operation: 'initial', direction: experience.studio.conceptDirection, answers })
     if (!selected.ok) { deps.report('studio_test_concept_failed', 'degraded', selected.elapsedMs); return { ok: true, value: { status: await status(), test: { ok: false, code: selected.code, elapsedMs: selected.elapsedMs } } } }
     const name = experience.studio.askName === false ? '' : 'Raven'
     const result = await provider.generate({ prompt: buildPortraitPrompt({ studio: experience.studio, concept: selected.concept, name }), quality: experience.studio.quality, picture: studioPictureType(experience.studio) })

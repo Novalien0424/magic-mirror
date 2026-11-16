@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { mirrorConfigSchema } from '../../src/main/config-service'
 import type { MirrorConfig } from '../../src/shared/types'
+import { studioConceptDirection } from '../../src/shared/studio-concept'
 import { studioPictureType } from '../../src/shared/portrait-studio'
 import { buildPortraitPrompt } from '../../src/shared/studio-image-prompt'
 import { createStudioConceptProvider, STUDIO_CONCEPT_CONFIG } from '../../src/main/studio/concept-provider'
@@ -52,7 +53,10 @@ const hash = (value: string | Buffer) => createHash('sha256').update(value).dige
 
 describe.skipIf(process.env.STUDIO_DRIVE_SAMPLES_LIVE !== '1')('Published Studio synthetic Drive samples', () => {
   it('generates three original illustrations with different complete synthetic answers', async () => {
-    const root = join(process.cwd(), '.artifacts/studio-drive-2026-11-16')
+    const batch = process.env.STUDIO_DRIVE_SAMPLE_BATCH
+    if (batch !== undefined && batch !== 'astra' && batch !== 'minimal') throw Error('sample_batch_invalid')
+    if (batch === 'astra' || batch === 'minimal') expect(STUDIO_CONCEPT_CONFIG.modelId).toBe('gpt-6-astra')
+    const root = join(process.cwd(), batch === 'minimal' ? '.artifacts/studio-minimal-2026-11-16' : batch === 'astra' ? '.artifacts/studio-astra-2026-11-16' : '.artifacts/studio-drive-2026-11-16')
     mkdirSync(root, { recursive: true })
     if (samples.some(sample => existsSync(join(root, `${sample.id}.png`)))) throw Error('sample_exports_already_exist_no_overwrite')
     const envelope = JSON.parse(readFileSync(join(homedir(), 'Library/Application Support/magic-mirror/config/active.json'), 'utf8'))
@@ -66,14 +70,20 @@ describe.skipIf(process.env.STUDIO_DRIVE_SAMPLES_LIVE !== '1')('Published Studio
     const studio = avatar?.experience?.studio
     if (!studio) throw Error('published_raven_studio_missing')
     expect(studio.questions).toHaveLength(4)
+    if (batch === 'minimal') {
+      expect(studio.artStyle).toMatch(/modern minimalist/i)
+      expect(STUDIO_CONCEPT_CONFIG.reasoningEffort).toBe('medium')
+    }
     const picture = studioPictureType(studio)
     const concepts = createStudioConceptProvider()
     const images = createCodexImageProvider({ credentials: createChatgptTokenFile(), settings: PORTRAIT_STUDIO.image })
     const metadata: Record<string, unknown> = {
       authorization: 'Owner requested three actual synthetic-answer runs and retained original PNGs for Drive upload.',
-      generatedAt: new Date().toISOString(), source: 'current published raven-field Studio settings', configVersion: published.configVersion,
+      batch: batch ?? 'original', generatedAt: new Date().toISOString(), source: 'current published raven-field Studio settings', configVersion: published.configVersion,
       quality: studio.quality, picture, artStyle: studio.artStyle, artStyleSha256: hash(studio.artStyle),
+      conceptDirectionSha256: hash(studioConceptDirection(studio)),
       conceptVersion: STUDIO_CONCEPT_CONFIG.version, conceptModel: STUDIO_CONCEPT_CONFIG.modelId,
+      conceptReasoningEffort: STUDIO_CONCEPT_CONFIG.reasoningEffort, conceptTimeoutMs: STUDIO_CONCEPT_CONFIG.timeoutMs, conceptMaxOutputTokens: STUDIO_CONCEPT_CONFIG.maxOutputTokens,
       imageModel: PORTRAIT_STUDIO.image.modelId, samples: [],
     }
     const rows = metadata.samples as Record<string, unknown>[]
@@ -83,7 +93,7 @@ describe.skipIf(process.env.STUDIO_DRIVE_SAMPLES_LIVE !== '1')('Published Studio
       const answers = studio.questions.map((question, index) => ({ question: question.en, answer: sample.answers[index]!, ...(question.imageLine ? { context: question.imageLine } : {}) }))
       const row: Record<string, unknown> = { id: sample.id, title: sample.title, synthetic: true, answers: sample.answers }
       rows.push(row); checkpoint()
-      const concept = await concepts.select({ operation: 'initial', answers })
+      const concept = await concepts.select({ operation: 'initial', direction: studio.conceptDirection, answers })
       row.conceptOk = concept.ok; row.conceptElapsedMs = concept.elapsedMs
       if (!concept.ok) { row.failure = concept.code; checkpoint(); throw Error(`sample_${sample.id}_concept_${concept.code}`) }
       // This brief derives only from the synthetic fixture above and is authorized sample metadata.

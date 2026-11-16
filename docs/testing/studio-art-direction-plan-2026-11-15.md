@@ -288,3 +288,21 @@ the audit records the outcome, not an automatic archive of visitor images.
   credentials exposed, phase advanced or unrelated draft published. Real-person
   likeness and owner aesthetic acceptance remain unverified. Functional delivery
   is complete; strict visual edge acceptance is explicitly **not complete**.
+
+### 2026-11-16 owner-requested three sample exports
+
+Owner explicitly requested three actual runs with different answers and upload of
+the result images to Google Drive. Used current published Raven version24, medium
+quality, real Main concept/image providers and three distinct synthetic answer
+sets: exploration/belonging, quiet resilience/craft, renewal/playfulness. Exactly
+three original generations, no edits/rerolls, no normal-runtime restart or settings
+change. All three produced 1254×1254 PNGs with decoded transparent pixels; this
+format check does not close the prior visual-edge issue. Concept/render seconds:
+13.645/38.935, 15.774/25.244, 17.194/40.644. Generation test passed (151.61 s);
+Node typecheck passed. Initial read-only schema-envelope fixture failure occurred
+before any provider call and was corrected; both logs retained locally.
+
+Authorized PNG exports and synthetic-only manifest are in
+`.artifacts/studio-drive-2026-11-16/`. Uploaded only the three original PNGs to
+[owner Drive folder](https://drive.google.com/drive/folders/1Z5Otqj3KNi3JrDDuItvYQ116h7z-f1JI).
+No visitor data or credentials uploaded; no public sharing permission added.

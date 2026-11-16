@@ -504,9 +504,10 @@ describe('Studio concept ownership', () => {
     const next = { ...SAMPLE_STUDIO_CONCEPT, composition: 'Green wings held open.' }
     const other = { ...SAMPLE_STUDIO_CONCEPT, subject: 'A wind-shaped ancient tree' }
     const select = vi.fn<StudioConceptProvider['select']>().mockResolvedValueOnce({ ok: true, concept: SAMPLE_STUDIO_CONCEPT, elapsedMs: 1 }).mockResolvedValueOnce({ ok: true, concept: next, elapsedMs: 1 }).mockResolvedValueOnce({ ok: true, concept: other, elapsedMs: 1 })
-    const experience = defaultExperience(); experience.studio.revisionsAllowed = 2
+    const experience = defaultExperience(); experience.studio.revisionsAllowed = 2; experience.studio.conceptDirection = 'Choose mythical animals using selected emotional themes.'
     const h = harness({ experience, concepts: { select }, results: [okImage, { ...okImage, image: Buffer.from('changed1') }, { ...okImage, image: Buffer.from('changed2') }] })
     h.runtime.start(identity, experience, 'visitor'); confirmName(h, 'Test')
+    experience.studio.conceptDirection = 'Unpublished change: choose furniture.'
     await answerAll(h); h.release(); await vi.waitFor(() => expect(h.runtime.phase()).toBe('reveal'))
     expect(select.mock.calls[0]![0]).toMatchObject({ operation: 'initial', answers: expect.arrayContaining([expect.objectContaining({ answer: 'answer 1' })]) })
     expect(h.calls[0]!.prompt).not.toContain('answer 1')
@@ -518,6 +519,7 @@ describe('Studio concept ownership', () => {
     await vi.waitFor(() => expect(h.runtime.phase()).toBe('reveal'))
     expect(select.mock.calls[2]![0]).toMatchObject({ operation: 'reimagine', previous: next, answers: expect.any(Array) })
     expect(h.calls[2]!.prompt).toContain(other.subject)
+    for (const [request] of select.mock.calls) expect(request.direction).toBe('Choose mythical animals using selected emotional themes.')
     h.runtime.close('test_complete')
   })
   it('aborts an outstanding concept on close and discards a late result after replacement', async () => {

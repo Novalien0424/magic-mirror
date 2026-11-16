@@ -90,7 +90,7 @@ describe.skipIf(process.env.STUDIO_CONCEPT_LIVE !== '1')('Studio concept-to-art 
         const change = 'Add a subtle warm amber accent while retaining the subject, shape and composition.'
         const refined = await select('refine', { operation: 'refine', previous: concept, change })
         const refinedImage = await render('refine', refined, image, change)
-        const reimagineChange = 'Reimagine this as an ancient wind-shaped tree rather than a bird or animal.'
+        const reimagineChange = 'Reimagine this as a many-finned mythical sea dragon with a new silhouette instead of the original creature.'
         const reimagined = await select('reimagine', { operation: 'reimagine', previous: refined, answers, change: reimagineChange })
         expect(reimagined.subject).not.toBe(refined.subject)
         await render('reimagine', reimagined, refinedImage, reimagineChange)

@@ -1,5 +1,5 @@
 import conceptSource from '../../resources/config/studio-concept.v1.json' with { type: 'json' }
-import { SAMPLE_STUDIO_CONCEPT } from './studio-concept'
+import { SAMPLE_STUDIO_CONCEPT, studioConceptDirection, STUDIO_CONCEPT_DIRECTION_SOURCE } from './studio-concept'
 import type { AvatarProfile } from './avatar-profiles'
 import { imageGenerationEnabled } from './avatar-skills'
 import { IMAGE_SKILL, IMAGE_SKILL_SOURCE, buildImageSkillPrompt } from './image-skill'
@@ -109,6 +109,7 @@ function studioImagePrompts(avatar: AvatarProfile, profileSource: string): Promp
   const name = studio.askName === false ? '' : 'Raven'
   const source = `${PORTRAIT_STUDIO_SOURCE}#imagePrompt + ${profileSource}.experience.studio`
   return [
+    { title: 'Interactive Studio concept direction · effective creative instruction', source: studio.conceptDirection === undefined ? STUDIO_CONCEPT_DIRECTION_SOURCE : `${profileSource}.experience.studio.conceptDirection`, content: studioConceptDirection(studio) },
     { title: 'Interactive Studio image prompt · first picture (illustrative concept)', source, content: buildPortraitPrompt({ studio, concept: SAMPLE_STUDIO_CONCEPT, name }) },
     { title: 'Interactive Studio image prompt · change (illustrative revision)', source, content: buildRevisionPrompt({ studio, concept: SAMPLE_STUDIO_CONCEPT, change: 'give the subject silver accents', name }) },
   ]

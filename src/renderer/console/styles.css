@@ -1096,7 +1096,7 @@ input[aria-invalid="true"] { border-color: #e8a394; }
 .experiences-editor__question--name[data-off="true"] { opacity: .5; }
 .experiences-editor__preview { margin-top: .6rem; }
 .experiences-editor__hint { display: block; color: #a9b7c3; font-size: .85rem; font-weight: 400; }
-.experiences-editor__preview-text { margin: .3rem 0 .6rem; padding: .6rem; max-height: 14rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere;
+.experiences-editor__preview-text, .experiences-editor__concept-direction-preview { margin: .3rem 0 .6rem; padding: .6rem; max-height: 14rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere;
   border: 1px solid #304957; border-radius: 6px; background: #0d151b; color: #cfe3ef; font-size: .82rem; }
 .experiences-editor__status--attention { color: #ead18b; }
 .experiences-editor__grid { display: grid; gap: .6rem .9rem; margin: .4rem 0 .6rem; }

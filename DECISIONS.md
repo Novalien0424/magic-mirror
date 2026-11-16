@@ -1,5 +1,40 @@
 # Magic Mirror — Durable rulings
 
+## 2026-11-16 — Minimalist art and meaning-first expression (owner, later ruling)
+
+Replace the prior sophisticated painterly style with modern minimalist symbolic
+2D art: simplified expressive shapes, clean colour fields, restrained palette and
+simple shading; no brush texture or fine-detail rendering. Astra interprets the
+central spirit/meaning before species selection, expressing it through behavior,
+posture, emotion or a meaningful carried/protected/released object. Not every
+answer or expressive device must appear. Animal/mythical principal subject remains;
+operators can edit Art style and Concept direction as before. Astra medium reasoning
+and bounded60s/4096-token budget support deeper interpretation without exposing
+private reasoning. [Audit](docs/testing/studio-minimal-symbolism-2026-11-16.md).
+
+## 2026-11-16 — Astra for Studio creative interpretation (owner)
+
+Use the newest verified Astra model for the final answer-to-concept call, replacing
+Sol. Current official/account catalog ID: `gpt-6-astra`, set in versioned Studio
+concept config. The PNG renderer remains GPT Image Flare. No silent Sol fallback
+or invented API alias. Preserve editable animal/mythical direction and approved
+painterly style. [Evidence](docs/testing/studio-creature-direction-2026-11-16.md).
+
+## 2026-11-16 — Editable animal/mythical-creature concept direction (owner)
+
+Owner approved the painterly style and nautilus example, but rejected a chair as
+an artwork subject. Default Studio concepts must be animals or mythical creatures.
+Interpret a meaningful tension, aspiration or action selectively through creature
+form/pose/material; do not copy literal answer nouns or include every answer.
+The nautilus is an example, not a fixed subject preset. Preserve the approved style.
+
+Operators control this through per-avatar **Concept direction**, separate from
+Art style, with reset to the versioned animal default. A deliberate operator
+creative override may choose another domain; fixed privacy, bounded output and
+revision ownership rules remain enforced. No invented psychological diagnosis or
+exposed chain-of-thought. Existing configs without this field follow the fallback
+without publishing unrelated draft changes. [Audit](docs/testing/studio-creature-direction-2026-11-16.md).
+
 ## 2026-11-15 — Selective concepts and borderless fantasy art (owner, later ruling)
 
 - Supersedes today's mandatory white cutting border and all-answer redraw wording.

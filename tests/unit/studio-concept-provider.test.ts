@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createStudioConceptProvider, STUDIO_CONCEPT_CONFIG } from '../../src/main/studio/concept-provider'
-import { parseStudioConcept, SAMPLE_STUDIO_CONCEPT } from '../../src/shared/studio-concept'
+import { parseStudioConcept, SAMPLE_STUDIO_CONCEPT, STUDIO_DEFAULT_CONCEPT_DIRECTION } from '../../src/shared/studio-concept'
 const credentials = { get: async () => 'synthetic-test-key' }
 const payload = (value: unknown = SAMPLE_STUDIO_CONCEPT) => new Response(JSON.stringify({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify(value) }] }] }))
 describe('Studio concept provider', () => {
@@ -10,14 +10,14 @@ describe('Studio concept provider', () => {
     expect(await provider.select({ operation: 'initial', answers: [{ question: 'A moment?', answer: 'visitor-private-answer' }] })).toMatchObject({ ok: true, concept: SAMPLE_STUDIO_CONCEPT })
     const request = JSON.parse(fetchImpl.mock.calls[0]![1]!.body as string)
     expect(request).toMatchObject({ model: STUDIO_CONCEPT_CONFIG.modelId, store: false, instructions: STUDIO_CONCEPT_CONFIG.instructions })
-    expect(JSON.parse(request.input)).toEqual({ operation: 'initial', answers: [{ question: 'A moment?', answer: 'visitor-private-answer' }] })
+    expect(JSON.parse(request.input)).toEqual({ operation: 'initial', operatorCreativeDirection: STUDIO_DEFAULT_CONCEPT_DIRECTION, answers: [{ question: 'A moment?', answer: 'visitor-private-answer' }] })
     expect(request).not.toHaveProperty('tools')
   })
   it('does not send answers on refine and supplies them on explicit reimagine', async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () => payload())
     const provider = createStudioConceptProvider({ credentials, fetchImpl })
     await provider.select({ operation: 'refine', answers: [{ question: 'private', answer: 'private' }], previous: SAMPLE_STUDIO_CONCEPT, change: 'green wings' })
-    expect(JSON.parse(JSON.parse(fetchImpl.mock.calls[0]![1]!.body as string).input)).toEqual({ operation: 'refine', previous: SAMPLE_STUDIO_CONCEPT, change: 'green wings' })
+    expect(JSON.parse(JSON.parse(fetchImpl.mock.calls[0]![1]!.body as string).input)).toEqual({ operation: 'refine', operatorCreativeDirection: STUDIO_DEFAULT_CONCEPT_DIRECTION, previous: SAMPLE_STUDIO_CONCEPT, change: 'green wings' })
     await provider.select({ operation: 'reimagine', answers: [{ question: 'moment', answer: 'moving' }], previous: SAMPLE_STUDIO_CONCEPT, change: 'a plant instead' })
     expect(JSON.parse(JSON.parse(fetchImpl.mock.calls[1]![1]!.body as string).input)).toHaveProperty('answers')
   })
@@ -29,6 +29,23 @@ describe('Studio concept provider', () => {
     const get = vi.fn(), fetchImpl = vi.fn(); const controller = new AbortController(); controller.abort()
     expect(await createStudioConceptProvider({ credentials: { get }, fetchImpl }).select({ operation: 'initial', signal: controller.signal })).toMatchObject({ ok: false, code: 'studio_cancelled' })
     expect(get).not.toHaveBeenCalled(); expect(fetchImpl).not.toHaveBeenCalled()
+  })
+  it('uses editable animal direction by default and accepts a deliberate object override without hidden animal rules', async () => {
+    expect(STUDIO_DEFAULT_CONCEPT_DIRECTION).toContain('animal or mythical creature')
+    expect(STUDIO_DEFAULT_CONCEPT_DIRECTION).toContain('Species selection alone is not the concept')
+    const fetchImpl = vi.fn<typeof fetch>(async () => payload())
+    const direction = 'Choose a symbolic crafted object such as a chair; express selected themes through its form.'
+    const provider = createStudioConceptProvider({ credentials, fetchImpl })
+    for (const operation of ['initial', 'refine', 'reimagine'] as const) await provider.select({ operation, direction, previous: SAMPLE_STUDIO_CONCEPT, change: 'More elegant' })
+    for (const [, init] of fetchImpl.mock.calls) {
+      const request = JSON.parse(init!.body as string)
+      expect(JSON.parse(request.input).operatorCreativeDirection).toBe(direction)
+      expect(request.instructions).not.toContain('main subject must be an animal')
+      expect(request.instructions).toContain('operator may intentionally choose a different subject domain')
+    }
+    const get = vi.fn(), unavailable = vi.fn()
+    expect(await createStudioConceptProvider({ credentials: { get }, fetchImpl: unavailable }).select({ operation: 'initial', direction: 'x'.repeat(1601) })).toMatchObject({ ok: false, code: 'studio_provider_contract' })
+    expect(get).not.toHaveBeenCalled(); expect(unavailable).not.toHaveBeenCalled()
   })
   it('bounds response bytes and converts HTTP/network failures into metadata codes', async () => {
     const oversized = await createStudioConceptProvider({ credentials, fetchImpl: async () => new Response('x'.repeat(65537)) }).select({ operation: 'initial' })

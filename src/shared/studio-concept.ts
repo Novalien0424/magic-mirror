@@ -1,3 +1,17 @@
+import source from '../../resources/config/studio-concept.v1.json' with { type: 'json' }
+
+export const STUDIO_CONCEPT_DIRECTION_MAX = 1600
+export const STUDIO_CONCEPT_DIRECTION_SOURCE = 'resources/config/studio-concept.v1.json#defaultDirection'
+export const STUDIO_DEFAULT_CONCEPT_DIRECTION = source.defaultDirection
+export function studioConceptDirectionIssue(value: unknown): string {
+  return typeof value === 'string' && value.trim().length > 0 && value.length <= STUDIO_CONCEPT_DIRECTION_MAX && !/[\u0000-\u0009\u000b-\u001f\u007f]/u.test(value)
+    ? '' : `Describe the creative interpretation in 1 to ${STUDIO_CONCEPT_DIRECTION_MAX} characters, or reset to default.`
+}
+export function studioConceptDirection(studio: { conceptDirection?: string } | undefined): string {
+  return studio?.conceptDirection ?? STUDIO_DEFAULT_CONCEPT_DIRECTION
+}
+if (studioConceptDirectionIssue(STUDIO_DEFAULT_CONCEPT_DIRECTION)) throw Error('invalid_studio_concept_direction_config')
+
 /** A visual brief, not a psychological assessment. Main retains it in RAM only. */
 export interface StudioConcept { readonly subject: string; readonly interpretation: string; readonly composition: string; readonly mood: string }
 export const STUDIO_CONCEPT_KEYS = ['subject', 'interpretation', 'composition', 'mood'] as const

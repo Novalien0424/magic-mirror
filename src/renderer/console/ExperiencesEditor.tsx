@@ -1,4 +1,4 @@
-import { SAMPLE_STUDIO_CONCEPT } from '../../shared/studio-concept'
+import { SAMPLE_STUDIO_CONCEPT, studioConceptDirection, studioConceptDirectionIssue, STUDIO_DEFAULT_CONCEPT_DIRECTION, STUDIO_CONCEPT_DIRECTION_MAX } from '../../shared/studio-concept'
 import * as React from 'react'
 import { useState } from 'react'
 import type { AvatarProfile } from '../../shared/avatar-profiles'
@@ -101,6 +101,11 @@ export function setImagePrompt(experience: AvatarExperience, key: StudioImagePro
 export function setNameFont(experience: AvatarExperience, text: string): AvatarExperience {
   const { nameFont: _font, ...studio } = experience.studio
   return { ...experience, studio: text === STUDIO_DEFAULT_NAME_FONT ? studio : { ...studio, nameFont: text } }
+}
+/** Missing creative direction follows versioned defaults; reset removes only this override. */
+export function setConceptDirection(experience: AvatarExperience, text: string): AvatarExperience {
+  const { conceptDirection: _direction, ...studio } = experience.studio
+  return { ...experience, studio: text === STUDIO_DEFAULT_CONCEPT_DIRECTION ? studio : { ...studio, conceptDirection: text } }
 }
 export function resetImagePrompts(experience: AvatarExperience, key?: StudioImagePromptKey): AvatarExperience {
   const imagePrompt = { ...experience.studio.imagePrompt }
@@ -216,6 +221,7 @@ export function experienceIssues(experience: AvatarExperience): Record<string, s
     if (!/^[a-z0-9][a-z0-9_-]{0,31}$/.test(question.id) || ids.has(question.id)) add(`questions.${index}.id`, 'This question has an invalid or repeated id. Remove it and add it again.')
     ids.add(question.id)
   })
+  if (studio.conceptDirection !== undefined) add('conceptDirection', studioConceptDirectionIssue(studio.conceptDirection))
   add('artStyle', textIssue(studio.artStyle, 600, 'Describe the painting style.', false, true))
   if (studio.nameFont !== undefined) add('nameFont', studioNameFontIssue(studio.nameFont))
   add('revisionsAllowed', wholeIssue(studio.revisionsAllowed, 0, 3, 'changes'))
@@ -402,6 +408,11 @@ export function ExperiencesEditor({ avatar, disabled, onChange }: {
 
     <fieldset disabled={disabled} aria-label="Picture">
       <legend>4 · Picture</legend>
+      <HelpField help={FIELD_HELP.studioConceptDirection} error={issues.conceptDirection}>Concept direction{studio.conceptDirection !== undefined ? ' · edited' : ''}<textarea aria-label="Concept direction" lang="en" rows={5} maxLength={STUDIO_CONCEPT_DIRECTION_MAX}
+        value={studioConceptDirection(studio)} onChange={e => set(setConceptDirection(experience, e.currentTarget.value))} /></HelpField>
+      <div className="experiences-editor__reset-row">
+        <button type="button" disabled={disabled || studio.conceptDirection === undefined} onClick={() => set(setConceptDirection(experience, STUDIO_DEFAULT_CONCEPT_DIRECTION))}>Reset concept direction to default</button>
+      </div>
       <HelpField help={FIELD_HELP.studioArtStyle} error={issues.artStyle}>Art style<textarea lang="en" rows={2} maxLength={600} value={studio.artStyle}
         onChange={e => setStudio({ artStyle: e.currentTarget.value })} /></HelpField>
       <div className="experiences-editor__grid experiences-editor__grid--2">
@@ -500,6 +511,8 @@ export function ImagePromptEditor({ experience, issues, disabled, onChange }: {
       <details className="experiences-editor__preview">
         <summary>Preview with an illustrative concept</summary>
         <p className="console__muted">This is an illustrative concept, not a prediction from the questions. Generate test picture runs concept selection with sample answers.</p>
+        <p className="console__muted">Creative direction used before rendering:</p>
+        <pre className="experiences-editor__concept-direction-preview">{studioConceptDirection(studio)}</pre>
         <p className="console__muted">First picture{name ? ' (name “Raven”)' : ''}:</p>
         <pre className="experiences-editor__preview-text">{buildPortraitPrompt({ studio, concept: SAMPLE_STUDIO_CONCEPT, name })}</pre>
         <p className="console__muted">A change (“give the subject silver accents”):</p>

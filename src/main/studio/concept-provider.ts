@@ -1,11 +1,12 @@
 import source from '../../../resources/config/studio-concept.v1.json' with { type: 'json' }
 import { createEnvironmentCredentialSource, type EnvironmentCredentialSource } from '../environment-credential-source'
-import { parseStudioConcept, STUDIO_CONCEPT_KEYS, type StudioConcept } from '../../shared/studio-concept'
+import { parseStudioConcept, studioConceptDirection, studioConceptDirectionIssue, STUDIO_CONCEPT_KEYS, type StudioConcept } from '../../shared/studio-concept'
 
 export const STUDIO_CONCEPT_CONFIG = Object.freeze(source)
 export type StudioConceptResult = { ok: true; concept: StudioConcept; elapsedMs: number } | { ok: false; code: 'studio_cancelled' | 'studio_image_timeout' | 'studio_image_unavailable' | 'studio_provider_contract'; elapsedMs: number }
 export interface StudioConceptInput {
   operation: 'initial' | 'refine' | 'reimagine'
+  direction?: string
   answers?: readonly { question: string; answer: string; context?: string }[]
   previous?: StudioConcept
   change?: string
@@ -23,14 +24,15 @@ export function createStudioConceptProvider(deps: { credentials?: EnvironmentCre
     const deadline = AbortSignal.timeout(source.timeoutMs), signal = input.signal ? AbortSignal.any([input.signal, deadline]) : deadline
     try {
       if (input.signal?.aborted) return failure('studio_cancelled')
+      if (input.direction !== undefined && studioConceptDirectionIssue(input.direction)) return failure('studio_provider_contract')
       const credential = await credentials.get()
       if (!credential) return failure('studio_image_unavailable')
       if (signal.aborted) return failure(input.signal?.aborted ? 'studio_cancelled' : 'studio_image_timeout')
       const response = await (deps.fetchImpl ?? fetch)('https://api.openai.com/v1/responses', {
         method: 'POST', signal, headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: source.modelId, store: false, reasoning: { effort: source.reasoningEffort }, max_output_tokens: 1400,
+        body: JSON.stringify({ model: source.modelId, store: false, reasoning: { effort: source.reasoningEffort }, max_output_tokens: source.maxOutputTokens,
           instructions: source.instructions,
-          input: JSON.stringify({ operation: input.operation, ...(input.operation !== 'refine' ? { answers: input.answers ?? [] } : {}), ...(input.previous ? { previous: input.previous } : {}), ...(input.change ? { change: input.change } : {}) }),
+          input: JSON.stringify({ operation: input.operation, operatorCreativeDirection: studioConceptDirection({ conceptDirection: input.direction }), ...(input.operation !== 'refine' ? { answers: input.answers ?? [] } : {}), ...(input.previous ? { previous: input.previous } : {}), ...(input.change ? { change: input.change } : {}) }),
           text: { format: { type: 'json_schema', name: 'studio_concept', strict: true, schema } } }),
       })
       if (!response.ok || !response.body) { await response.body?.cancel().catch(() => undefined); return failure('studio_image_unavailable') }

@@ -1,3 +1,4 @@
+import type { StudioConceptProvider } from '../../src/main/studio/concept-provider'
 import { SAMPLE_STUDIO_CONCEPT } from '../../src/shared/studio-concept'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
@@ -88,7 +89,7 @@ describe('Portrait Studio configuration', () => {
 describe('Portrait Studio IPC', () => {
   type Snapshot = { lifecycle: string; realtimeSessionId: string | null; sessionGeneration: number }
   function harness(options: { enabled?: boolean; lifecycle?: string; auth?: 'signed_in' | 'missing'; experience?: () => Promise<ReturnType<typeof defaultExperience>>; keepAlive?: () => Promise<void>; keepSignedIn?: boolean; mirrorMode?: Parameters<typeof registerStudioIpc>[0]['mirrorMode']
-    fetchImpl?: typeof fetch; now?: () => number; photoPending?: () => boolean } = {}) {
+    fetchImpl?: typeof fetch; concepts?: StudioConceptProvider; now?: () => number; photoPending?: () => boolean } = {}) {
     const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>()
     const dispatched: unknown[] = []
     const reports: string[] = []
@@ -97,7 +98,7 @@ describe('Portrait Studio IPC', () => {
     const credentials: ChatgptCredentialSource = { get: async () => options.auth === 'missing' ? null : ({ accessToken: 't', accountId: 'a' }),
       refreshAfterRejection: async () => null, status: async () => ({ status: options.auth ?? 'signed_in' }), keepAlive: options.keepAlive }
     const fetchImpl = options.fetchImpl ?? vi.fn(async () => new Response('', { status: 500 })) as unknown as typeof fetch
-    const images = createAvatarImageService({ concepts: { select: async () => ({ ok: true, concept: SAMPLE_STUDIO_CONCEPT, elapsedMs: 0 }) }, credentials, keepSignedIn: options.keepSignedIn, report: reason => reports.push(reason), fetchImpl })
+    const images = createAvatarImageService({ concepts: options.concepts ?? { select: async () => ({ ok: true, concept: SAMPLE_STUDIO_CONCEPT, elapsedMs: 0 }) }, credentials, keepSignedIn: options.keepSignedIn, report: reason => reports.push(reason), fetchImpl })
     // Registered through the Remote Console registry, which marks its own events as remote.
     const registry = createWebConsoleRegistry({ handle: (channel, handler) => { handlers.set(channel, handler) }, on: () => undefined })
     registerStudioIpc({
@@ -123,6 +124,18 @@ describe('Portrait Studio IPC', () => {
   const lastStep = (h: ReturnType<typeof harness>) => (h.dispatched as { event?: { step?: { id: string } } }[]).filter(c => c.event?.step).at(-1)!.event!.step!.id
   const RT1 = { realtimeSessionId: 'rt-1', sessionGeneration: 1 }
 
+  it('uses the avatar concept direction for an actual Console test picture without changing its art style', async () => {
+    const experience = defaultExperience()
+    experience.studio.conceptDirection = 'Select a thoughtful mythical animal from the answer themes.'
+    const select = vi.fn<StudioConceptProvider['select']>(async () => ({ ok: true, concept: SAMPLE_STUDIO_CONCEPT, elapsedMs: 1 }))
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(16)])
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ data: [{ b64_json: png.toString('base64') }] })))
+    const h = harness({ experience: async () => experience, concepts: { select }, fetchImpl })
+    expect(await h.console({ action: 'test' })).toMatchObject({ ok: true, value: { test: { ok: true } } })
+    expect(select).toHaveBeenCalledWith(expect.objectContaining({ operation: 'initial', direction: experience.studio.conceptDirection, answers: expect.any(Array) }))
+    expect(JSON.parse(fetchImpl.mock.calls[0]![1]!.body as string).prompt).toContain(experience.studio.artStyle)
+    expect(h.reports.join(' ')).not.toContain(experience.studio.conceptDirection)
+  })
   it('previews unsaved guest aliases through Console only, without persistence, speech or provider use', async () => {
     const h = harness({ lifecycle: 'dormant', auth: 'missing' })
     const command = { action: 'match_name', name: '艾米', guests: { names: ['Amy'], match: 'only', aliases: [{ name: 'Amy', aliases: ['艾米'] }] } }

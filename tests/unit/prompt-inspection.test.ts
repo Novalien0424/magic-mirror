@@ -1,3 +1,4 @@
+import { STUDIO_DEFAULT_CONCEPT_DIRECTION, STUDIO_CONCEPT_DIRECTION_SOURCE } from '../../src/shared/studio-concept'
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { newAvatar } from '../../src/renderer/console/profile-workspace'
@@ -55,6 +56,15 @@ describe('file-sourced prompt inspection', () => {
     expect(rendering.content).not.toContain('I moved to a new city')
   })
 
+  it('shows effective default or edited concept direction separately from fixed concept rules', () => {
+    const avatar = newAvatar('fixture')
+    let direction = inspectAvatarPrompts(avatar, []).pages.Session.find(section => section.title.startsWith('Interactive Studio concept direction'))!
+    expect(direction).toMatchObject({ source: STUDIO_CONCEPT_DIRECTION_SOURCE, content: STUDIO_DEFAULT_CONCEPT_DIRECTION })
+    avatar.experience!.studio.conceptDirection = 'Use one symbolic crafted object, not an animal.'
+    direction = inspectAvatarPrompts(avatar, []).pages.Session.find(section => section.title.startsWith('Interactive Studio concept direction'))!
+    expect(direction.content).toBe(avatar.experience!.studio.conceptDirection)
+    expect(direction.source).toContain('.experience.studio.conceptDirection')
+  })
   it('does not reinterpret template markers or markup inside operator values', () => {
     const value = '<script>alert(1)</script>{{text}}'
     expect(renderPrompt('performance', { speakingStyle:value, text:'Exact.' })).toContain(value)

@@ -1,3 +1,4 @@
+import { studioConceptDirectionIssue } from './studio-concept'
 /** Interactive Studio contracts (internal name: portrait studio). Dependency-free: also used by the sandboxed preloads. */
 import { speechScriptIssue } from './speech-script.ts'
 
@@ -170,6 +171,8 @@ export interface StudioSettings {
   nameQuestion: { zh: string; en: string }
   questions: StudioQuestion[]
   artStyle: string
+  /** Creative concept interpretation; missing uses the versioned default. */
+  conceptDirection?: string
   /** Sticker: square, transparent, die-cut (default). Portrait: a full tall picture. */
   pictureType?: StudioPictureType
   nameLettering: 'nameplate' | 'painted'
@@ -215,7 +218,7 @@ export const DEFAULT_EXPERIENCE: Readonly<AvatarExperience> = Object.freeze({
       { id: 'q3', zh: '很好 -那麼說說看，現在的你有什麼事情是覺得兩件都想要，但是卻很難同時做到的事情?', en: 'What are two things you want now that are difficult to have at the same time?', slot: 'detail', imageLine: 'A tension between wishes to consider selectively: {{answer}}.' },
       { id: 'q4', zh: '很好 -那麼說說看，如果可以的話 你希望生活裡多一點什麼?', en: 'If you could, what would you like a little more of in your life?', slot: 'mood', imageLine: 'A wish for life that may inform the concept: {{answer}}.' },
     ],
-    artStyle: '2D stylized fantasy illustration in a sophisticated, hand-painted animation concept-art style. An elegant, expressive silhouette with intentional proportions, layered painterly shading, subtle brush texture and selective fine detail. A contemporary, cool visual attitude with a restrained palette and deliberate accents. Let the concept determine the colours and character; avoid a generic cute mascot, chibi proportions or flat vector-icon treatment.',
+    artStyle: 'Modern minimalist symbolic 2D art. Use a strong expressive silhouette, simplified intentional shapes, clean colour fields and a restrained palette with a few deliberate accents. Convey meaning through pose, gesture, expression and a small number of purposeful visual elements. Keep shading simple and surfaces clean; no painterly brush texture, intricate ornament or fine-detail rendering. Aim for a contemporary, cool presence rather than a generic cute mascot or chibi character.',
     pictureType: 'sticker',
     nameLettering: 'nameplate',
     quality: 'medium',
@@ -260,7 +263,7 @@ function parseStudioPrompts(value: unknown): StudioPrompts | null {
 }
 
 const STUDIO_KEYS = ['startScript', 'nameQuestion', 'questions', 'artStyle', 'nameLettering', 'quality', 'revisionsAllowed', 'prompts']
-const STUDIO_OPTIONAL_KEYS = ['wakePhrase', 'character', 'farewell', 'askName', 'pictureType', 'nameFont', 'imagePrompt', 'screenText', 'failureLines']
+const STUDIO_OPTIONAL_KEYS = ['wakePhrase', 'character', 'farewell', 'conceptDirection', 'askName', 'pictureType', 'nameFont', 'imagePrompt', 'screenText', 'failureLines']
 export const STUDIO_CHARACTER_MAX = 4000
 export const STUDIO_FAREWELL_LINES = 4
 /** Same rule as an avatar wake phrase; Main reports a phrase the wake model cannot encode. */
@@ -294,6 +297,7 @@ function parseStudioSettings(input: unknown): StudioSettings | null {
   if ('wakePhrase' in value && studioWakePhraseIssue(value.wakePhrase)) return null
   if ('farewell' in value && studioFarewellIssue(value.farewell)) return null
   if ('character' in value && studioCharacterIssue(value.character)) return null
+  if ('conceptDirection' in value && studioConceptDirectionIssue(value.conceptDirection)) return null
   if ('pictureType' in value && !STUDIO_PICTURE_TYPES.includes(value.pictureType as StudioPictureType)) return null
   if ('nameFont' in value && studioNameFontIssue(value.nameFont)) return null
   if ('imagePrompt' in value && !(record(value.imagePrompt) && Object.entries(value.imagePrompt)

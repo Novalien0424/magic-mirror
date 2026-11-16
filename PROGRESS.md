@@ -2,6 +2,42 @@
 
 ## Current delivery
 
+**11-16 13:56 minimalist symbolic style deployed:** owner requested clean modern
+shapes instead of sophisticated painterly texture/detail. Astra now uses medium
+reasoning and meaning-first direction: express spirit through behavior, posture,
+emotion or purposeful carrying, not species alone. Scoped active/draft24→25 changes
+only Raven Art style; quality and other fields preserved.92tests/build/typecheck,
+4 live concept cases and3fresh exports passed. Six prior Drive images deleted as
+requested; [three new originals](https://drive.google.com/drive/folders/1Tin39EMvbxbkdH19cqN6SB5fTaHYt_Ak)
+uploaded/verified, no rerolls. Chair-answer image passed minimalist/creature/expression
+judgments. Runtime ready; prior edge-quality limit remains. [Audit](docs/testing/studio-minimal-symbolism-2026-11-16.md).
+
+
+**11-16 13:43 Astra creative call deployed:** owner-required `gpt-6-astra` replaces
+Sol in versioned Studio concept config (latest official/account catalog verified).
+GPT Image Flare renders the images; editable creature direction/style preserved.
+72 focused tests, Node typecheck/build and3 real generation runs pass. Original
+transparent PNGs uploaded to [Astra review folder](https://drive.google.com/drive/folders/1hbVxZAHuU-rEqIcYzsm-VoSYqM5HRhT9).
+Normal runtime ready; source stamp `9386aba8…`. [Audit](docs/testing/studio-creature-direction-2026-11-16.md).
+
+
+**11-16 13:37 editable creature direction deployed:** owner accepted painterly style,
+rejected chair subject. New default selects animals/mythical creatures from selective
+meaning rather than literal answer nouns. Operators edit **Avatars → Interactive
+Studio → 4 · Picture → Concept direction**, save/publish, then start a new session;
+reset follows versioned animal default. Art style and saved version24 configs unchanged.
+92 focused tests, typechecks/build, 24 rendered UI checks passed. Live three-default
+concepts, custom override and chair-answer creature image passed sampled judgments.
+Normal app/audio restored. [Audit and retained failure](docs/testing/studio-creature-direction-2026-11-16.md).
+
+
+**11-16 owner review samples:** three actual concept/image generations with different
+synthetic answers and published version24/medium settings completed. Original
+transparent PNGs uploaded to [Drive](https://drive.google.com/drive/folders/1Z5Otqj3KNi3JrDDuItvYQ116h7z-f1JI).
+No rerolls, runtime restart or settings changes. Format verified; prior edge-quality
+issue remains open pending visual acceptance. Audit appended below.
+
+
 **Concept-first art deployed 11-15 16:32; visual edge issue remains:** Main now
 selects a symbolic concept before rendering; raw answer checklists are removed,
 refine/reimagine differ, and Raven active/draft version24 use sophisticated

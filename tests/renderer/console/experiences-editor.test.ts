@@ -1,11 +1,11 @@
-import { SAMPLE_STUDIO_CONCEPT } from '../../../src/shared/studio-concept'
+import { SAMPLE_STUDIO_CONCEPT, STUDIO_DEFAULT_CONCEPT_DIRECTION, studioConceptDirection } from '../../../src/shared/studio-concept'
 import * as React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import {
   BilingualTexts, ExperiencesEditor, GuestListField, ImagePromptEditor, StagePrompts, addQuestion, experienceIssues, experienceOf, moveQuestion,
   parseGuestList, parseGuestAliases, guestAliasIssue, removeQuestion, resetImagePrompts, resetStagePrompts, resetTextMap, setFailureLine, setImagePrompt, setQuestionLine,
-  setNameFont, setScreenText, setStagePrompt,
+  setNameFont, setScreenText, setStagePrompt, setConceptDirection,
 } from '../../../src/renderer/console/ExperiencesEditor'
 import {
   STUDIO_DEFAULT_FAREWELL, STUDIO_DEFAULT_NAME_FONT, STUDIO_DEFAULT_WAKE_PHRASE, STUDIO_IMAGE_PROMPT_DEFAULTS, STUDIO_PROMPT_DEFAULTS, studioFarewellSpeech,
@@ -357,6 +357,34 @@ describe('Portrait Studio status panel', () => {
 })
 
 describe('Interactive Studio tuning', () => {
+  it('edits and resets creative direction independently of art style, validates bounds and shows effective guidance', () => {
+    let experience = defaultExperience()
+    const originalStyle = experience.studio.artStyle
+    expect(experience.studio).not.toHaveProperty('conceptDirection')
+    expect(studioConceptDirection(experience.studio)).toBe(STUDIO_DEFAULT_CONCEPT_DIRECTION)
+    const direction = 'Choose one symbolic crafted object such as an ancient chair.'
+    experience = setConceptDirection(experience, direction)
+    expect(parseAvatarExperience(experience)?.studio.conceptDirection).toBe(direction)
+    expect(experienceIssues(experience)).not.toHaveProperty('conceptDirection')
+    expect(experience.studio.artStyle).toBe(originalStyle)
+    const avatar = { ...newAvatar('fixture'), experience }
+    const html = renderToStaticMarkup(React.createElement(ExperiencesEditor, { avatar, disabled: false, onChange() {} }))
+    expect(html).toContain('aria-label="Concept direction"')
+    expect(html).toContain('Reset concept direction to default')
+    expect(html).toContain(direction)
+    const preview = renderToStaticMarkup(React.createElement(ImagePromptEditor, { experience, issues: {}, disabled: false, onChange() {} }))
+    expect(preview).toContain('Creative direction used before rendering')
+    expect(preview).toContain(direction)
+    for (const value of ['', 'x'.repeat(1601), 'bad\tcontrol']) {
+      const invalid = setConceptDirection(experience, value)
+      expect(experienceIssues(invalid).conceptDirection).toBeTruthy()
+      expect(parseAvatarExperience(invalid)).toBeNull()
+    }
+    experience = setConceptDirection(experience, STUDIO_DEFAULT_CONCEPT_DIRECTION)
+    expect(experience.studio).not.toHaveProperty('conceptDirection')
+    expect(studioConceptDirection(experience.studio)).toBe(STUDIO_DEFAULT_CONCEPT_DIRECTION)
+    expect(experience.studio.artStyle).toBe(originalStyle)
+  })
   it('edits every image instruction and question line, stores only edits and previews what Main sends', () => {
     let experience = defaultExperience()
     const tree = () => elements(ImagePromptEditor({ experience, issues: experienceIssues(experience), disabled: false, onChange(next) { experience = next } }))
