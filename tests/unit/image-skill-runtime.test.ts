@@ -1,3 +1,4 @@
+import { SAMPLE_STUDIO_CONCEPT } from '../../src/shared/studio-concept'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createImageSkillRuntime, type SkillImage } from '../../src/main/studio/image-skill-runtime'
 import { IMAGE_SKILL, parseImageSkillEvent, parseImageSkillRequest, parseImageSkillView, type ImageSkillEvent, type ImageSkillView } from '../../src/shared/image-skill'
@@ -151,7 +152,7 @@ describe('shared image skill ownership and photo consent', () => {
   })
   it('Studio preserves its normal question/reveal/change flow when a photo is attached', async () => {
     const h = harness(); const commands: unknown[] = []
-    const runtime = createStudioRuntime({ provider: () => h.provider, dispatch: command => { commands.push(command); return true }, activity: vi.fn(), report: vi.fn() })
+    const runtime = createStudioRuntime({ concepts: { select: async () => ({ ok: true, concept: SAMPLE_STUDIO_CONCEPT, elapsedMs: 0 }) }, provider: () => h.provider, dispatch: command => { commands.push(command); return true }, activity: vi.fn(), report: vi.fn() })
     const experience = defaultExperience(); experience.studio.askName = false; experience.studio.questions = [experience.studio.questions[0]!]
     runtime.start(ID, experience, 'visitor')
     expect(runtime.usePhoto(ID, { bytes: Buffer.from('guest-photo'), mimeType: 'image/jpeg' })).toBe(true)
@@ -172,7 +173,7 @@ describe('shared image skill ownership and photo consent', () => {
   it('requires fresh consent for a Studio retake and paints with the replacement reference', async () => {
     vi.useFakeTimers()
     const h = harness(), commands: unknown[] = []
-    const studio = createStudioRuntime({ provider: () => h.provider, dispatch: command => { commands.push(command); return true }, activity: vi.fn(), report: vi.fn() })
+    const studio = createStudioRuntime({ concepts: { select: async () => ({ ok: true, concept: SAMPLE_STUDIO_CONCEPT, elapsedMs: 0 }) }, provider: () => h.provider, dispatch: command => { commands.push(command); return true }, activity: vi.fn(), report: vi.fn() })
     const experience = defaultExperience(); experience.studio.askName = false; experience.studio.questions = [experience.studio.questions[0]!]
     studio.start(ID, experience, 'visitor')
     h.studioActive.mockReturnValue(true)

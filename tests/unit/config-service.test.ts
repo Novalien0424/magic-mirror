@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   ConfigServiceError,
   createConfigService,
+  updateAvatarStudioSettings,
   mirrorConfigSchema,
   type ConfigAtomicWriter,
   type ConfigEventSink,
@@ -14,6 +15,7 @@ import {
 } from '../../src/main/config-service'
 import type { ConfigDiff, MirrorConfig, MirrorEvent } from '../../src/shared/types'
 import { avatarCatalogFor, projectActiveAvatar } from '../../src/shared/avatar-profiles'
+import { defaultExperience } from '../../src/shared/portrait-studio'
 
 type ConfigEvent = Omit<MirrorEvent, 'time'>
 type SlotFailure = 'missing' | 'invalid' | 'unreadable'
@@ -400,6 +402,32 @@ afterEach(async () => {
 })
 
 describe('ConfigService contract', () => {
+  it.each([false, true])('scopes Studio publication and preserves unrelated draft values, compensating failures (%s)', async fail => {
+    const h = makeMemoryHarness(), catalog = avatarCatalogFor(baseConfig())
+    catalog.avatars[0]!.voice = 'coral'
+    catalog.avatars[0]!.experience = defaultExperience()
+    catalog.avatars.push({ ...structuredClone(catalog.avatars[0]!), id: 'other', name: 'Other' })
+    const active = projectActiveAvatar({ ...baseConfig(), avatarCatalog: catalog })
+    const draft = structuredClone(active)
+    draft.avatarCatalog!.avatars[0]!.experience!.studio.quality = 'low'
+    draft.idleSeconds = 600
+    seedSlots(h, 'mock-config', active, draft)
+    const before = await h.service().read()
+    if (fail) h.writer.failWrites.add(h.writer.writeCount + 2)
+    const change = updateAvatarStudioSettings({ configDir: 'mock-config', defaultConfigPath: 'mock-default',
+      files: h.files, atomicWriter: h.writer, events: makeSink(h.events) }, catalog.activeAvatarId,
+    studio => ({ ...studio, artStyle: 'Hand-painted fantasy concept art.' }))
+    if (fail) { await expect(change).rejects.toMatchObject({ code: 'config_write_failed' }); expect(await h.service().read()).toEqual(before); return }
+    await change
+    const after = await h.service().read()
+    for (const slot of ['active', 'draft'] as const) {
+      const expected = structuredClone(before[slot])
+      expected.configVersion = after[slot].configVersion
+      expected.avatarCatalog!.avatars[0]!.experience!.studio.artStyle = 'Hand-painted fantasy concept art.'
+      expect(after[slot]).toEqual(expected)
+    }
+    expect(after.previous).toEqual(before.active)
+  })
   it('emits config_loaded once for repeated reads and again after published version changes', async () => {
     const h = makeMemoryHarness()
     seedSlots(h, 'mock-config', baseConfig(), baseConfig())

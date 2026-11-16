@@ -1,12 +1,14 @@
 import { CHATGPT_KEEPALIVE_INTERVAL_MS } from '../chatgpt-auth/constants'
 import { createChatgptTokenFile, type ChatgptCredentialSource } from '../chatgpt-auth/token-file'
 import { PORTRAIT_STUDIO } from '../../shared/portrait-studio-config'
+import { createStudioConceptProvider, type StudioConceptProvider } from '../studio/concept-provider'
 import { createCodexImageProvider } from '../studio/image-provider'
 
 /** One Main-owned image service, injected into both conversation and guided Studio. */
 export function createAvatarImageService(deps: {
   report(reason: string, status: 'info' | 'degraded'): void
   credentials?: ChatgptCredentialSource
+  concepts?: StudioConceptProvider
   keepSignedIn?: boolean
   fetchImpl?: typeof fetch
 }) {
@@ -19,7 +21,7 @@ export function createAvatarImageService(deps: {
     keepAlive()
     setInterval(keepAlive, CHATGPT_KEEPALIVE_INTERVAL_MS).unref()
   }
-  return { provider, usable: async () => (await credentials.get().catch(() => null)) !== null,
+  return { provider, concepts: deps.concepts ?? createStudioConceptProvider({ fetchImpl: deps.fetchImpl }), usable: async () => (await credentials.get().catch(() => null)) !== null,
     status: () => credentials.status() }
 }
 export type AvatarImageService = ReturnType<typeof createAvatarImageService>

@@ -21,7 +21,7 @@ function freeze<T>(value: T): Readonly<T> {
 const config = freeze(source)
 const variables: [string, string, string[]][] = [
   ['journey', 'commentContext', ['character', 'comment', 'language', 'speakingStyle']],
-  ['imagePrompt', 'frame', ['style']], ['imagePrompt', 'painted', ['font', 'name']], ['imagePrompt', 'revision', ['change']],
+  ['imagePrompt', 'frame', ['style']], ['imagePrompt', 'styleFallback', ['style']], ['imagePrompt', 'painted', ['font', 'name']], ['imagePrompt', 'revision', ['change']],
   ['session', 'scriptNamed', ['count', 'en', 'zh']], ['session', 'scriptUnnamed', ['count']], ['session', 'replyLanguage', ['language']],
   ['agent', 'reveal', ['followUp']], ['agent', 'revealBlind', ['followUp']], ['guidance', 'askName', ['question']], ['guidance', 'confirmName', ['name']],
   ['guidance', 'chooseGuest', ['candidates']], ['guidance', 'askQuestion', ['count', 'index', 'question']], ['guidance', 'wrongStep', ['current']],
@@ -30,6 +30,10 @@ for (const [group, key, expected] of variables) {
   const text = (config as unknown as Record<string, Record<string, string>>)[group]![key]!
   const actual = [...new Set([...text.matchAll(/\{\{(\w+)\}\}/g)].map(match => match[1]))].sort()
   if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error('invalid_portrait_studio_variables')
+}
+for (const key of ['subject', 'interpretation', 'composition', 'mood'] as const) {
+  const actual = [...config.imagePrompt.concept[key].matchAll(/\{\{(\w+)\}\}/g)].map(match => match[1])
+  if (JSON.stringify(actual) !== JSON.stringify([key])) throw new Error('invalid_portrait_studio_variables')
 }
 for (const slot of Object.values(config.imagePrompt.slots)) if (!slot.includes('{{answer}}')) throw new Error('invalid_portrait_studio_variables')
 for (const [key, expected] of [['frame', ['style']], ['painted', ['font', 'name']], ['revision', ['change']], ['nameplate', []]] as const) {

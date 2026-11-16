@@ -1,3 +1,4 @@
+import { SAMPLE_STUDIO_CONCEPT } from '../../shared/studio-concept'
 import * as React from 'react'
 import { useState } from 'react'
 import type { AvatarProfile } from '../../shared/avatar-profiles'
@@ -15,7 +16,7 @@ import {
   STUDIO_DEFAULT_FAREWELL, STUDIO_DEFAULT_NAME_FONT, STUDIO_DEFAULT_WAKE_PHRASE, STUDIO_PROMPT_DEFAULTS, studioFailureLine, studioImagePrompt, studioImagePromptDefault,
   studioPrompt, studioQuestionLine, studioScreenText, studioWakePhrase,
 } from '../../shared/portrait-studio-config'
-import { buildPortraitPrompt, buildRevisionPrompt, STUDIO_SAMPLE_ANSWERS } from '../../shared/studio-image-prompt'
+import { buildPortraitPrompt, buildRevisionPrompt } from '../../shared/studio-image-prompt'
 import { HelpField } from './HelpField'
 import { HelpButton, InfoTip } from './HelpButton'
 import { NumberInput } from './NumberInput'
@@ -317,7 +318,7 @@ export function ExperiencesEditor({ avatar, disabled, onChange }: {
 
     <fieldset disabled={disabled} aria-label="Studio questions">
       <legend>3 · Name and questions <span className="experiences-editor__count">{count} of {STUDIO_MAX_QUESTIONS}</span> <InfoTip label="Questions"
-        help="The avatar asks these questions in order (after the name, when it is asked). Each answer enters the image prompt through its own image prompt line." /></legend>
+        help="The avatar asks these questions in order (after the name, when it is asked). Answers inform a selective concept step; they are not a checklist of objects to draw." /></legend>
       <HelpField help={FIELD_HELP.studioAskName}><input type="checkbox" checked={askName}
         onChange={e => setStudio({ askName: e.currentTarget.checked })} /> Ask for a name first</HelpField>
       <p className="console__muted">Each question waits for up to 30 seconds of silence after speech finishes. No name: 無名之人. No answer: 未回答, followed by “不回答 也是一種回答”. If the visitor never speaks before the first question times out, nobody is there: the visit ends with the “Nobody answered” line (More settings › Spoken failure lines) and paints nothing.</p>
@@ -380,7 +381,7 @@ export function ExperiencesEditor({ avatar, disabled, onChange }: {
             </div>
             <div className="experiences-editor__line">
               <HelpField help={FIELD_HELP.studioImageLine} helpLabel={`Question ${n} image prompt line`} error={issues[`questions.${index}.imageLine`]}>
-                Image prompt line{question.imageLine !== undefined ? ' · edited' : ''}<input type="text" lang="en" maxLength={STUDIO_IMAGE_LINE_MAX}
+                Concept context line{question.imageLine !== undefined ? ' · edited' : ''}<input type="text" lang="en" maxLength={STUDIO_IMAGE_LINE_MAX}
                   aria-label={`Question ${n} image prompt line`} value={studioQuestionLine(question)}
                   onChange={e => set(setQuestionLine(experience, index, e.currentTarget.value))} /></HelpField>
               <button type="button" aria-label={`Reset question ${n} image prompt line`} disabled={disabled || question.imageLine === undefined}
@@ -406,7 +407,7 @@ export function ExperiencesEditor({ avatar, disabled, onChange }: {
       <div className="experiences-editor__grid experiences-editor__grid--2">
         <HelpField help={FIELD_HELP.studioPictureType}>Picture type<select value={studioPictureType(studio)}
           onChange={e => setStudio({ pictureType: e.currentTarget.value as StudioPictureType })}>
-          <option value="sticker">Sticker (square, see-through, die-cut)</option>
+          <option value="sticker">Transparent illustration (square)</option>
           <option value="portrait">Full picture (tall)</option>
         </select></HelpField>
         <HelpField help={FIELD_HELP.studioNameFont} error={issues.nameFont}>Name font<input type="text" lang="en" maxLength={STUDIO_NAME_FONT_MAX}
@@ -467,8 +468,6 @@ export function ImagePromptEditor({ experience, issues, disabled, onChange }: {
   const edited = STUDIO_IMAGE_PROMPT_KEYS.filter(key => edits[key] !== undefined).length
   const attention = STUDIO_IMAGE_PROMPT_KEYS.some(key => issues[`imagePrompt.${key}`])
   const name = studio.askName === false ? '' : 'Raven'
-  const answers = studio.questions.map((question, index) => ({ slot: question.slot, imageLine: question.imageLine,
-    answer: STUDIO_SAMPLE_ANSWERS[index % STUDIO_SAMPLE_ANSWERS.length]! }))
   return <details className="experiences-editor__stages" open={attention || undefined}>
     <summary>Image prompt <span className="experiences-editor__count" role="status">{edited
       ? `${edited} of ${STUDIO_IMAGE_PROMPT_KEYS.length} instructions edited.` : 'All instructions use the default.'}</span></summary>
@@ -499,11 +498,12 @@ export function ImagePromptEditor({ experience, issues, disabled, onChange }: {
         })}
       </ol>
       <details className="experiences-editor__preview">
-        <summary>Preview with sample answers</summary>
+        <summary>Preview with an illustrative concept</summary>
+        <p className="console__muted">This is an illustrative concept, not a prediction from the questions. Generate test picture runs concept selection with sample answers.</p>
         <p className="console__muted">First picture{name ? ' (name “Raven”)' : ''}:</p>
-        <pre className="experiences-editor__preview-text">{buildPortraitPrompt({ studio, answers, name })}</pre>
-        <p className="console__muted">A change (“make the sky snowy”):</p>
-        <pre className="experiences-editor__preview-text">{buildRevisionPrompt({ studio, answers, change: 'make the sky snowy', name })}</pre>
+        <pre className="experiences-editor__preview-text">{buildPortraitPrompt({ studio, concept: SAMPLE_STUDIO_CONCEPT, name })}</pre>
+        <p className="console__muted">A change (“give the subject silver accents”):</p>
+        <pre className="experiences-editor__preview-text">{buildRevisionPrompt({ studio, concept: SAMPLE_STUDIO_CONCEPT, change: 'give the subject silver accents', name })}</pre>
       </details>
     </fieldset>
   </details>

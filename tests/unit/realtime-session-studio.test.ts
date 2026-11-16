@@ -1,3 +1,4 @@
+import { SAMPLE_STUDIO_CONCEPT } from '../../src/shared/studio-concept'
 import { describe, expect, it, vi } from 'vitest'
 import { invokeFunctionTool, RunContext, type FunctionTool } from '@openai/agents'
 import type { PortraitImageProvider } from '../../src/main/studio/image-provider'
@@ -162,7 +163,7 @@ describe('Portrait Studio in the Realtime session', () => {
     p.event({ type: 'response.done', response })
     p.event({ type: 'output_audio_buffer.stopped', response_id: 'offer' })
     await vi.waitFor(() => expect(requests).toContainEqual({ action: 'step_ready', stepId: 'review-fresh' }))
-    const revise = () => call(tool(p.agents[1]!, 'studio_revise'), { change: 'red wings' })
+    const revise = () => call(tool(p.agents[1]!, 'studio_revise'), { change: 'red wings', mode: 'refine' })
     await revise()
     p.event({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'review-echo', transcript: '重畫' })
     await revise()
@@ -172,7 +173,7 @@ describe('Portrait Studio in the Realtime session', () => {
     const pending = revise()
     p.event({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'preference', transcript: '請把翅膀改成紅色。' })
     await pending
-    expect(requests.filter(r => r.action === 'revise')).toEqual([{ action: 'revise', change: 'red wings' }])
+    expect(requests.filter(r => r.action === 'revise')).toEqual([{ action: 'revise', change: 'red wings', mode: 'refine' }])
     await handle.close('test_complete')
   })
 
@@ -655,7 +656,7 @@ describe('Portrait Studio in the Realtime session', () => {
     const p = probe()
     const experience = defaultExperience()
     let mirror: ReturnType<typeof createRealtimeSession>
-    const main = createStudioRuntime({ provider: () => ({ generate: vi.fn(), edit: vi.fn() }) as unknown as PortraitImageProvider,
+    const main = createStudioRuntime({ concepts: { select: async () => ({ ok: true, concept: SAMPLE_STUDIO_CONCEPT, elapsedMs: 0 }) }, provider: () => ({ generate: vi.fn(), edit: vi.fn() }) as unknown as PortraitImageProvider,
       dispatch: command => { if (command.type === 'studio_event') mirror?.studioEvent?.(command.event, ID); return true }, activity: vi.fn(), report: vi.fn() })
     const { requests, handle } = session(p, request => request.action === 'start' ? main.start(ID, experience, request.source) : main.handle(request, ID))
     mirror = handle
@@ -703,7 +704,7 @@ describe('Portrait Studio in the Realtime session', () => {
     const p = probe(), experience = defaultExperience()
     experience.guests = { names: ['Sean', 'Shawn'], match: 'only' }
     let mirror: ReturnType<typeof createRealtimeSession>
-    const main = createStudioRuntime({ provider: () => ({ generate: vi.fn(), edit: vi.fn() }),
+    const main = createStudioRuntime({ concepts: { select: async () => ({ ok: true, concept: SAMPLE_STUDIO_CONCEPT, elapsedMs: 0 }) }, provider: () => ({ generate: vi.fn(), edit: vi.fn() }),
       dispatch: command => { if (command.type === 'studio_event') mirror?.studioEvent?.(command.event, ID); return true }, activity: vi.fn(), report: vi.fn() })
     const { handle, requests } = session(p, r => r.action === 'start' ? main.start(ID, experience, r.source) : main.handle(r, ID))
     mirror = handle
@@ -754,7 +755,7 @@ describe('Portrait Studio in the Realtime session', () => {
   it('uses the local name shortlist and reads back a different listed candidate before confirmation', async () => {
     const p = probe(), experience = defaultExperience()
     experience.guests = { names: ['王曉明', '王小敏', '林美玲'], match: 'prefer' }
-    const main = createStudioRuntime({ provider: () => ({ generate: vi.fn(), edit: vi.fn() }), dispatch: () => true, activity: vi.fn(), report: vi.fn() })
+    const main = createStudioRuntime({ concepts: { select: async () => ({ ok: true, concept: SAMPLE_STUDIO_CONCEPT, elapsedMs: 0 }) }, provider: () => ({ generate: vi.fn(), edit: vi.fn() }), dispatch: () => true, activity: vi.fn(), report: vi.fn() })
     const { handle, requests } = session(p, r => r.action === 'start' ? main.start(ID, experience, r.source) : main.handle(r, ID))
     await call(tool(p.agents[0]!, 'start_portrait_studio'), {})
     for (let i = 0; i < 2; i++) {
@@ -802,7 +803,7 @@ describe('Portrait Studio in the Realtime session', () => {
     p.event({ type: 'response.created', response: { id: 'preamble-revision' } })
     p.event({ type: 'response.output_item.added', response_id: 'preamble-revision', item: { type: 'message', role: 'assistant' } })
     p.event({ type: 'response.output_item.added', response_id: 'preamble-revision', item: { type: 'function_call', name: 'studio_revise' } })
-    await call(tool(p.agents[1]!, 'studio_revise'), { change: 'snow' })
+    await call(tool(p.agents[1]!, 'studio_revise'), { change: 'snow', mode: 'refine' })
     if (delayedStep) step()
     p.event({ type: 'output_audio_buffer.started', response_id: 'preamble-revision' })
     p.event({ type: 'response.done', response: { id: 'preamble-revision', status: 'completed', output: [] } })
@@ -825,9 +826,9 @@ describe('Portrait Studio in the Realtime session', () => {
     p.event({ type: 'response.output_item.added', response_id: 'spoken', item: { type: 'message', role: 'assistant' } })
     p.event({ type: 'response.output_item.added', response_id: 'spoken', item: { type: 'function_call', name: 'studio_revise' } })
     // A background result: committed without a reply.
-    expect(await call(revise, { change: 'snow' })).toMatchObject({ content: { next: 'Say you are repainting', studio: { code: 'studio_revising' } } })
+    expect(await call(revise, { change: 'snow', mode: 'refine' })).toMatchObject({ content: { next: 'Say you are repainting', studio: { code: 'studio_revising' } } })
     p.event({ type: 'response.output_item.added', response_id: 'silent', item: { type: 'function_call', name: 'studio_revise' } })
-    const replied = await call(revise, { change: 'snow' })
+    const replied = await call(revise, { change: 'snow', mode: 'refine' })
     expect(replied).toMatchObject({ next: 'Say you are repainting', studio: { code: 'studio_revising' } })
     expect(replied).not.toHaveProperty('content')
   })

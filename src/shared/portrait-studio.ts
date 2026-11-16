@@ -210,12 +210,12 @@ export const DEFAULT_EXPERIENCE: Readonly<AvatarExperience> = Object.freeze({
     startScript: '歡迎來到Gate thirty-three. 在這連結現實與虛幻的地方，唯有捨棄你的肉身，吾才能引渡你前往下一個世界[pause=1s]',
     nameQuestion: { zh: '準備好的話就告訴我你的名字', en: 'When you are ready, tell me your name.' },
     questions: [
-      { id: 'q1', zh: '你的靈魂唯有轉換成為度界之獸，才能進入這個Gate thirty three, 現在讓我們來嘗試描繪你的靈魂吧。說說看最近這一年裡面，有哪一個時刻最讓你印象深刻 為什麼?', en: 'Your soul must become a creature that crosses worlds to enter Gate thirty-three. Let us imagine it. Which moment in the past year stayed with you most, and why?', slot: 'subject', imageLine: 'A meaningful moment, translated symbolically into the imaginary soul creature: {{answer}}.' },
-      { id: 'q2', zh: '很好- 那麼說說看是否曾經有哪一件事情，讓你覺得 這就是我啊 這就是我會做的事情。', en: 'Was there something you did that made you think: this is who I am, this is what I would do?', slot: 'detail', imageLine: 'An action expressing the visitor’s character, represented in the creature’s gesture or form: {{answer}}.' },
-      { id: 'q3', zh: '很好 -那麼說說看，現在的你有什麼事情是覺得兩件都想要，但是卻很難同時做到的事情?', en: 'What are two things you want now that are difficult to have at the same time?', slot: 'detail', imageLine: 'A tension between two wishes, represented as balanced contrasting features: {{answer}}.' },
-      { id: 'q4', zh: '很好 -那麼說說看，如果可以的話 你希望生活裡多一點什麼?', en: 'If you could, what would you like a little more of in your life?', slot: 'mood', imageLine: 'A wish for life, represented in the creature’s colours or small supporting motif: {{answer}}.' },
+      { id: 'q1', zh: '讓我們為你的旅程找到一個奇幻的象徵。說說看最近這一年裡面，有哪一個時刻最讓你印象深刻 為什麼?', en: 'Let us find a fantasy symbol for your journey. Which moment in the past year stayed with you most, and why?', slot: 'subject', imageLine: 'A meaningful moment for creative interpretation: {{answer}}.' },
+      { id: 'q2', zh: '很好- 那麼說說看是否曾經有哪一件事情，讓你覺得 這就是我啊 這就是我會做的事情。', en: 'Was there something you did that made you think: this is who I am, this is what I would do?', slot: 'detail', imageLine: 'An action the visitor described: {{answer}}.' },
+      { id: 'q3', zh: '很好 -那麼說說看，現在的你有什麼事情是覺得兩件都想要，但是卻很難同時做到的事情?', en: 'What are two things you want now that are difficult to have at the same time?', slot: 'detail', imageLine: 'A tension between wishes to consider selectively: {{answer}}.' },
+      { id: 'q4', zh: '很好 -那麼說說看，如果可以的話 你希望生活裡多一點什麼?', en: 'If you could, what would you like a little more of in your life?', slot: 'mood', imageLine: 'A wish for life that may inform the concept: {{answer}}.' },
     ],
-    artStyle: 'Modern minimalist multi-colour vector-style illustration. Clean geometric shapes, crisp edges, a balanced palette of distinct flat colours and generous negative space. Keep the soul creature expressive and symbolic with few thoughtful details; no photorealism, gradients or heavy textures.',
+    artStyle: '2D stylized fantasy illustration in a sophisticated, hand-painted animation concept-art style. An elegant, expressive silhouette with intentional proportions, layered painterly shading, subtle brush texture and selective fine detail. A contemporary, cool visual attitude with a restrained palette and deliberate accents. Let the concept determine the colours and character; avoid a generic cute mascot, chibi proportions or flat vector-icon treatment.',
     pictureType: 'sticker',
     nameLettering: 'nameplate',
     quality: 'medium',
@@ -354,7 +354,7 @@ export type StudioRequest =
   | { action: 'language'; language: StudioLanguage }
   | { action: 'step_ready' | 'step_activity' | 'paint' | 'deliver'; stepId: string }
   | { action: 'answer'; question: number; answer: string; language: StudioLanguage }
-  | { action: 'revise'; change: string }
+  | { action: 'revise'; change: string; mode?: 'refine' | 'reimagine' }
   | { action: 'finish' }
   | { action: 'exit' }
 
@@ -373,7 +373,7 @@ export function parseStudioRequest(value: unknown): StudioRequest | null {
       && (value.question as number) >= 1 && (value.question as number) <= STUDIO_MAX_QUESTIONS && studioText(value.answer, STUDIO_ANSWER_MAX)
       && (value.language === 'zh' || value.language === 'en')
       ? { action: 'answer', question: value.question as number, answer: value.answer, language: value.language } : null
-    case 'revise': return exact(value, ['action', 'change']) && studioText(value.change, 120) ? { action: 'revise', change: value.change } : null
+    case 'revise': return (exact(value, ['action', 'change']) || exact(value, ['action', 'change', 'mode']) && (value.mode === 'refine' || value.mode === 'reimagine')) && studioText(value.change, 120) ? { action: 'revise', change: value.change, mode: value.mode === 'reimagine' ? 'reimagine' : 'refine' } : null
     case 'finish': case 'exit': case 'reject_name': case 'repeat': return exact(value, ['action']) ? { action: value.action } : null
     default: return null
   }

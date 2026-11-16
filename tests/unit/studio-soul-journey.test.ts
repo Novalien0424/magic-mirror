@@ -1,3 +1,4 @@
+import { SAMPLE_STUDIO_CONCEPT } from '../../src/shared/studio-concept'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createStudioRuntime } from '../../src/main/studio/studio-runtime'
 import { deferredPrinterSkill } from '../../src/main/studio/printer-skill'
@@ -13,7 +14,7 @@ function visit(count = 4) {
   const generate = vi.fn(async () => ({ ok: true as const, image: Buffer.from('synthetic-image'), mimeType: 'image/png' as const, elapsedMs: 1 }))
   const printer = deferredPrinterSkill(reason => reports.push(reason))
   const deliver = vi.spyOn(printer, 'deliver')
-  const runtime = createStudioRuntime({ provider: () => ({ generate, edit: generate }), activity: vi.fn(), report: reason => reports.push(reason),
+  const runtime = createStudioRuntime({ concepts: { select: async () => ({ ok: true, concept: SAMPLE_STUDIO_CONCEPT, elapsedMs: 0 }) }, provider: () => ({ generate, edit: generate }), activity: vi.fn(), report: reason => reports.push(reason),
     keepsakeSinks: [printer], dispatch: command => {
       if (command.type === 'studio_event') { events.push(command.event); if ('step' in command.event && command.event.step) current = command.event.step }
       else views.push(command.view)
@@ -138,7 +139,7 @@ describe('Gate thirty-three application journey', () => {
     expect(v.generate).not.toHaveBeenCalled()
     v.signal('paint'); await Promise.resolve(); await Promise.resolve()
     expect(v.generate).toHaveBeenCalledOnce()
-    expect(v.generate.mock.calls[0]).toEqual(expect.arrayContaining([expect.objectContaining({ prompt: expect.stringContaining('未回答') })]))
+    expect(v.generate.mock.calls[0]).toEqual(expect.arrayContaining([expect.objectContaining({ prompt: expect.stringContaining(SAMPLE_STUDIO_CONCEPT.subject) })]))
     expect(v.runtime.phase()).toBe('reveal')
     v.signal('step_ready'); await vi.advanceTimersByTimeAsync(30000)
     expect(v.current()).toMatchObject({ phase: 'keepsake', silent: true, speech: '現在讓我們把你的靈魂傳遞出去' })

@@ -1,3 +1,5 @@
+import type { StudioConceptProvider } from '../../src/main/studio/concept-provider'
+import { SAMPLE_STUDIO_CONCEPT } from '../../src/shared/studio-concept'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createStudioRuntime } from '../../src/main/studio/studio-runtime'
 import type { PortraitImageProvider, PortraitImageResult } from '../../src/main/studio/image-provider'
@@ -8,7 +10,7 @@ const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a
 const identity = { realtimeSessionId: 'rt-1', sessionGeneration: 1 }
 const okImage: PortraitImageResult = { ok: true, image: PNG, mimeType: 'image/png', elapsedMs: 1200 }
 
-function harness(options: { experience?: AvatarExperience; results?: PortraitImageResult[]; provider?: boolean } = {}) {
+function harness(options: { experience?: AvatarExperience; results?: PortraitImageResult[]; provider?: boolean; concepts?: StudioConceptProvider } = {}) {
   const commands: { type: string; view?: unknown; event?: unknown }[] = []
   const activity: string[] = []
   const reports: string[] = []
@@ -20,7 +22,7 @@ function harness(options: { experience?: AvatarExperience; results?: PortraitIma
     generate: async ({ prompt, signal }) => { calls.push({ kind: 'generate', prompt, signal }); await gate; return results.shift()! },
     edit: async ({ prompt }) => { calls.push({ kind: 'edit', prompt }); return results.shift()! },
   }
-  const runtime = createStudioRuntime({
+  const runtime = createStudioRuntime({ concepts: options.concepts ?? { select: async () => ({ ok: true, concept: SAMPLE_STUDIO_CONCEPT, elapsedMs: 0 }) },
     provider: () => options.provider === false ? null : provider,
     dispatch: command => { commands.push(command as never); return true },
     activity: (kind, runId) => activity.push(`${kind}:${runId.slice(0, 7)}`),
@@ -112,7 +114,7 @@ describe('portrait studio runtime', () => {
     expect(h.calls).toHaveLength(0)
     completeCue(h, 'paint')
     expect(h.views().at(-1)).toMatchObject({ phase: 'painting' })
-    expect(h.calls).toHaveLength(1)
+    await vi.waitFor(() => expect(h.calls).toHaveLength(1))
     h.release()
     await vi.waitFor(() => expect(h.runtime.phase()).toBe('reveal'))
     h.runtime.handle({ action: 'revise', change: 'Make the wings red' }, identity)
@@ -122,10 +124,11 @@ describe('portrait studio runtime', () => {
     expect(h.views().at(-1)).toMatchObject({ phase: 'revising' })
     await vi.waitFor(() => expect(h.calls).toHaveLength(2))
     const redraw = h.calls[1]!.prompt
-    expect(redraw).toContain('Preserve the meaning, not the old rendering.')
+    expect(redraw).toContain('Preserve unrequested features within the subject')
     expect(redraw).toContain(h.experience.studio.artStyle)
-    expect(redraw).toContain('no gradients, shadows, glow, texture or tiny details')
-    expect(redraw.match(/"synthetic answer"/g)).toHaveLength(4)
+    expect(redraw).toContain('fully transparent background')
+    expect(redraw).not.toContain('synthetic answer')
+    expect(redraw).toContain(SAMPLE_STUDIO_CONCEPT.subject)
     expect(redraw).toContain('"Make the wings red"')
     h.runtime.close('test_complete')
   })
@@ -192,7 +195,8 @@ describe('portrait studio runtime', () => {
     h.release()
     await vi.waitFor(() => expect(h.runtime.phase()).toBe('reveal'))
     expect(h.calls[0]!.prompt).not.toContain('王曉明')
-    expect(h.calls[0]!.prompt).toContain('"answer 1"')
+    expect(h.calls[0]!.prompt).not.toContain('answer 1')
+    expect(h.calls[0]!.prompt).toContain(SAMPLE_STUDIO_CONCEPT.subject)
     expect(h.reports.join(' ')).not.toMatch(/王曉明|answer 1/)
   })
 
@@ -344,7 +348,8 @@ describe('portrait studio runtime', () => {
     await answerAll(h)
     // The app owns painting; old stage instructions cannot ask more questions.
     expect(h.runtime.handle({ action: 'answer', question: 5, answer: 'x', language: 'zh' }, identity).next).toContain('Do not record more story answers')
-    expect(h.calls[0]!.prompt).toContain('Card figure: "answer 1".')
+    expect(h.calls[0]!.prompt).not.toContain('answer 1')
+    expect(h.calls[0]!.prompt).toContain(SAMPLE_STUDIO_CONCEPT.subject)
     expect(h.calls[0]!.prompt).not.toContain('王曉明')
     h.release()
     await vi.waitFor(() => expect(h.events().at(-1)).toMatchObject({ event: 'failed', line: '牌卡散了，我們聊聊吧。' }))
@@ -424,7 +429,7 @@ describe('portrait studio runtime', () => {
     vi.useFakeTimers()
     const delivered = vi.fn()
     const commands: { type: string; event?: unknown }[] = [], reports: string[] = []
-    const runtime = createStudioRuntime({ provider: () => ({ generate: async () => okImage, edit: async () => okImage }),
+    const runtime = createStudioRuntime({ concepts: { select: async () => ({ ok: true, concept: SAMPLE_STUDIO_CONCEPT, elapsedMs: 0 }) }, provider: () => ({ generate: async () => okImage, edit: async () => okImage }),
       dispatch: command => { commands.push(command as never); return true }, activity: vi.fn(), report: reason => reports.push(reason),
       keepsakeSinks: [{ name: 'printer', deliver: delivered }] })
     const h = { runtime, events: () => commands.filter(c => c.type === 'studio_event').map(c => c.event as { event: string }) } as unknown as ReturnType<typeof harness>
@@ -444,7 +449,7 @@ describe('portrait studio runtime', () => {
 
   it('reports an async keepsake sink failure without blocking the farewell', async () => {
     const reports: string[] = [], commands: { type: string; event?: unknown }[] = []
-    const runtime = createStudioRuntime({ provider: () => ({ generate: async () => okImage, edit: async () => okImage }),
+    const runtime = createStudioRuntime({ concepts: { select: async () => ({ ok: true, concept: SAMPLE_STUDIO_CONCEPT, elapsedMs: 0 }) }, provider: () => ({ generate: async () => okImage, edit: async () => okImage }),
       dispatch: command => { commands.push(command as never); return true }, activity: vi.fn(), report: reason => reports.push(reason),
       keepsakeSinks: [{ name: 'printer', deliver: async () => { throw new Error('offline') } }, { name: 'sync', deliver: () => { throw new Error('x') } }] })
     const h = { runtime, events: () => commands.filter(c => c.type === 'studio_event').map(c => c.event as { event: string }) } as unknown as ReturnType<typeof harness>
@@ -492,3 +497,51 @@ describe('portrait studio runtime', () => {
   })
 })
 
+
+
+describe('Studio concept ownership', () => {
+  it('selects from answers, refines from prior brief only, and reimagines explicitly', async () => {
+    const next = { ...SAMPLE_STUDIO_CONCEPT, composition: 'Green wings held open.' }
+    const other = { ...SAMPLE_STUDIO_CONCEPT, subject: 'A wind-shaped ancient tree' }
+    const select = vi.fn<StudioConceptProvider['select']>().mockResolvedValueOnce({ ok: true, concept: SAMPLE_STUDIO_CONCEPT, elapsedMs: 1 }).mockResolvedValueOnce({ ok: true, concept: next, elapsedMs: 1 }).mockResolvedValueOnce({ ok: true, concept: other, elapsedMs: 1 })
+    const experience = defaultExperience(); experience.studio.revisionsAllowed = 2
+    const h = harness({ experience, concepts: { select }, results: [okImage, { ...okImage, image: Buffer.from('changed1') }, { ...okImage, image: Buffer.from('changed2') }] })
+    h.runtime.start(identity, experience, 'visitor'); confirmName(h, 'Test')
+    await answerAll(h); h.release(); await vi.waitFor(() => expect(h.runtime.phase()).toBe('reveal'))
+    expect(select.mock.calls[0]![0]).toMatchObject({ operation: 'initial', answers: expect.arrayContaining([expect.objectContaining({ answer: 'answer 1' })]) })
+    expect(h.calls[0]!.prompt).not.toContain('answer 1')
+    h.runtime.handle({ action: 'revise', change: 'Green wings', mode: 'refine' }, identity); completeCue(h, 'paint')
+    await vi.waitFor(() => expect(h.runtime.phase()).toBe('reveal'))
+    expect(select.mock.calls[1]![0]).toMatchObject({ operation: 'refine', previous: SAMPLE_STUDIO_CONCEPT, change: 'Green wings' })
+    expect(select.mock.calls[1]![0]).not.toHaveProperty('answers')
+    h.runtime.handle({ action: 'revise', change: 'A tree instead', mode: 'reimagine' }, identity); completeCue(h, 'paint')
+    await vi.waitFor(() => expect(h.runtime.phase()).toBe('reveal'))
+    expect(select.mock.calls[2]![0]).toMatchObject({ operation: 'reimagine', previous: next, answers: expect.any(Array) })
+    expect(h.calls[2]!.prompt).toContain(other.subject)
+    h.runtime.close('test_complete')
+  })
+  it('aborts an outstanding concept on close and discards a late result after replacement', async () => {
+    let resolve!: (result: Awaited<ReturnType<StudioConceptProvider['select']>>) => void
+    const select = vi.fn<StudioConceptProvider['select']>(() => new Promise(r => { resolve = r }))
+    const h = harness({ concepts: { select } }); h.runtime.start(identity, h.experience, 'visitor'); confirmName(h, 'Test'); await answerAll(h)
+    const signal = select.mock.calls[0]![0].signal!
+    h.runtime.close('test_cancel'); expect(signal.aborted).toBe(true)
+    h.runtime.start({ realtimeSessionId: 'new', sessionGeneration: 2 }, h.experience, 'visitor')
+    resolve({ ok: true, concept: SAMPLE_STUDIO_CONCEPT, elapsedMs: 1 }); await Promise.resolve(); await Promise.resolve()
+    expect(h.calls).toHaveLength(0); expect(h.runtime.phase()).toBe('name')
+    h.runtime.close('test_complete')
+  })
+  it('reports concept failure visibly without silently generating from raw answers', async () => {
+    const h = harness({ concepts: { select: async () => ({ ok: false, code: 'studio_image_timeout', elapsedMs: 25000 }) } })
+    h.runtime.start(identity, h.experience, 'visitor'); confirmName(h, 'Test'); await answerAll(h)
+    await vi.waitFor(() => expect(h.runtime.phase()).toBeNull())
+    expect(h.calls).toHaveLength(0); expect(h.reports).toContain('studio_concept_image_timeout')
+    expect(h.events()).toContainEqual(expect.objectContaining({ event: 'failed', keepPortrait: false }))
+  })
+  it('rejects malformed concept success before the image boundary', async () => {
+    const h = harness({ concepts: { select: async () => ({ ok: true, concept: { ...SAMPLE_STUDIO_CONCEPT, subject: '' }, elapsedMs: 1 }) } })
+    h.runtime.start(identity, h.experience, 'visitor'); confirmName(h, 'Test'); await answerAll(h)
+    await vi.waitFor(() => expect(h.runtime.phase()).toBeNull())
+    expect(h.calls).toHaveLength(0); expect(h.reports).toContain('studio_concept_invalid')
+  })
+})

@@ -1,3 +1,5 @@
+import conceptSource from '../../resources/config/studio-concept.v1.json' with { type: 'json' }
+import { SAMPLE_STUDIO_CONCEPT } from './studio-concept'
 import type { AvatarProfile } from './avatar-profiles'
 import { imageGenerationEnabled } from './avatar-skills'
 import { IMAGE_SKILL, IMAGE_SKILL_SOURCE, buildImageSkillPrompt } from './image-skill'
@@ -7,7 +9,7 @@ import { PORTRAIT_STUDIO, PORTRAIT_STUDIO_SOURCE, studioFarewellSpeech, studioPr
 import { parseSpeechScript } from './speech-script'
 import { MEMORY_PROMPTS, MEMORY_PROMPT_SOURCE } from './memory-prompts'
 import { defaultExperience, STUDIO_PROMPT_INFO, STUDIO_PROMPT_STAGES, studioStartLanguage } from './portrait-studio'
-import { buildPortraitPrompt, buildRevisionPrompt, STUDIO_SAMPLE_ANSWERS } from './studio-image-prompt'
+import { buildPortraitPrompt, buildRevisionPrompt } from './studio-image-prompt'
 import { DEFAULT_WAKE_PHRASE } from './avatar-commands'
 import { REALTIME_PROMPTS as prompts, REALTIME_PROMPT_SOURCE, buildAuditionPrompt, buildSpeechResponse, buildMemoryQuestion, buildMemoryState, buildMemoryAcknowledgment } from './realtime-prompts'
 import type { SceneActionDefinition } from './types'
@@ -47,6 +49,8 @@ export function inspectAvatarPrompts(avatar: AvatarProfile, actions: readonly Sc
         return section(`Interactive Studio stage · ${STUDIO_PROMPT_INFO[stage].label}`, studioPrompt(studio, stage),
           edited ? `${profileSource}.experience.studio.prompts.${stage}` : `${PORTRAIT_STUDIO_SOURCE} (default)`)
       }),
+      section('Interactive Studio concept selection · Main instructions (view only)', conceptSource.instructions, 'resources/config/studio-concept.v1.json#instructions'),
+      section('Interactive Studio concept model · versioned', json({ modelId: conceptSource.modelId, reasoningEffort: conceptSource.reasoningEffort, timeoutMs: conceptSource.timeoutMs }), 'resources/config/studio-concept.v1.json'),
       ...studioImagePrompts(avatar, profileSource),
       ...studioRequests(avatar, settings, profileSource)] : []),
       section('Confirmed memory state · synthetic empty brief', buildMemoryState({ status: 'accepted', code: 'memory_identity_confirmed', mode: 'automatic', entries: [] }), `${REALTIME_PROMPT_SOURCE}#memoryState`)],
@@ -99,15 +103,13 @@ function studioRequests(avatar: AvatarProfile, settings: AvatarSessionSettings, 
   ]
 }
 
-/** The image prompts Main would send, with sample answers instead of visitor data. */
+/** The image prompts Main would send, with illustrative concept instead of visitor data. */
 function studioImagePrompts(avatar: AvatarProfile, profileSource: string): PromptSection[] {
   const studio = (avatar.experience ?? defaultExperience()).studio
   const name = studio.askName === false ? '' : 'Raven'
-  const answers = studio.questions.map((question, index) => ({ slot: question.slot, imageLine: question.imageLine,
-    answer: STUDIO_SAMPLE_ANSWERS[index % STUDIO_SAMPLE_ANSWERS.length]! }))
   const source = `${PORTRAIT_STUDIO_SOURCE}#imagePrompt + ${profileSource}.experience.studio`
   return [
-    { title: 'Interactive Studio image prompt · first picture (sample answers)', source, content: buildPortraitPrompt({ studio, answers, name }) },
-    { title: 'Interactive Studio image prompt · change (sample request)', source, content: buildRevisionPrompt({ studio, answers, change: 'make the sky snowy', name }) },
+    { title: 'Interactive Studio image prompt · first picture (illustrative concept)', source, content: buildPortraitPrompt({ studio, concept: SAMPLE_STUDIO_CONCEPT, name }) },
+    { title: 'Interactive Studio image prompt · change (illustrative revision)', source, content: buildRevisionPrompt({ studio, concept: SAMPLE_STUDIO_CONCEPT, change: 'give the subject silver accents', name }) },
   ]
 }

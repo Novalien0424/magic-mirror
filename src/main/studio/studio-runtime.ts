@@ -8,6 +8,8 @@ import type {
 import type { PortraitImageProvider, PortraitImageResult } from './image-provider'
 import { matchGuestNames, guestTextKey } from './guest-names'
 import { buildPortraitPrompt, buildRevisionPrompt } from './prompt-builder'
+import type { StudioConceptProvider } from './concept-provider'
+import { parseStudioConcept, type StudioConcept } from '../../shared/studio-concept'
 import { IMAGE_SKILL } from '../../shared/image-skill'
 
 export interface StudioIdentity { readonly realtimeSessionId: string; readonly sessionGeneration: number }
@@ -36,6 +38,8 @@ interface Run {
   revisionsLeft: number
   revision: number
   change?: string
+  revisionMode?: 'refine' | 'reimagine'
+  concept?: StudioConcept
   imageId?: string
   abort?: AbortController
   activityHeld: boolean
@@ -65,6 +69,7 @@ const reply = (status: StudioReply['status'], code: string, next?: string, candi
  */
 export function createStudioRuntime(input: {
   provider(): PortraitImageProvider | null
+  concepts: StudioConceptProvider
   dispatch(command: { type: 'studio_view'; view: StudioView | null } | { type: 'studio_event'; event: StudioSessionEvent; identity: StudioIdentity }): boolean
   activity(kind: 'started' | 'finished', runId: string): void
   report(reason: string, status?: 'info' | 'degraded', timingMs?: number): void
@@ -188,6 +193,7 @@ export function createStudioRuntime(input: {
     stopDeadline(r)
     images.clear()
     r.photo = undefined
+    r.concept = undefined
     // Always release the idle-timer hold, on every exit path.
     release(r)
     input.dispatch({ type: 'studio_view', view: null })
@@ -247,17 +253,29 @@ export function createStudioRuntime(input: {
     hold(r)
     publish(r)
     const quality = r.experience.studio.quality, picture = studioPictureType(r.experience.studio)
-    const answers = r.answers.map((answer, index) => ({ slot: question(r, index).slot, imageLine: question(r, index).imageLine, answer }))
+    const answers = r.answers.map((answer, index) => ({ question: question(r, index).en, answer, ...(question(r, index).imageLine ? { context: question(r, index).imageLine } : {}) }))
     const previous = r.imageId ? images.get(r.imageId) : undefined
     let result: PortraitImageResult
+    let selectedConcept: StudioConcept | undefined
     try {
+      const selected = await input.concepts.select({ operation: kind === 'generate' ? 'initial' : r.revisionMode ?? 'refine',
+        ...(kind === 'generate' || r.revisionMode === 'reimagine' ? { answers } : {}),
+        ...(r.concept ? { previous: r.concept } : {}), ...(r.change ? { change: r.change } : {}), signal: abort.signal })
+      if (run !== r || abort.signal.aborted) return
+      if (!selected.ok || !parseStudioConcept(selected.concept)) {
+        input.report(selected.ok ? 'studio_concept_invalid' : `studio_concept_${selected.code.replace(/^studio_/, '')}`, 'degraded', selected.elapsedMs)
+        fail(r, selected.ok ? 'studio_provider_contract' : selected.code, kind === 'edit'); return
+      }
+      const concept = selected.concept
+      selectedConcept = concept
+      input.report('studio_concept_ready', 'info', selected.elapsedMs)
       const photo = kind === 'generate' ? r.photo : undefined
       r.photo = undefined
       result = photo
-        ? await provider.edit({ prompt: `${IMAGE_SKILL.photo}\n\n${buildPortraitPrompt({ studio: r.experience.studio, answers, name: r.name })}`, image: photo.bytes, mimeType: photo.mimeType, quality, picture, signal: abort.signal })
+        ? await provider.edit({ prompt: `${IMAGE_SKILL.photo}\n\n${buildPortraitPrompt({ studio: r.experience.studio, concept, name: r.name })}`, image: photo.bytes, mimeType: photo.mimeType, quality, picture, signal: abort.signal })
         : kind === 'edit' && previous
-        ? await provider.edit({ prompt: buildRevisionPrompt({ studio: r.experience.studio, answers, change: r.change ?? '', name: r.name }), image: previous.bytes, mimeType: previous.mimeType, quality, picture, signal: abort.signal })
-        : await provider.generate({ prompt: buildPortraitPrompt({ studio: r.experience.studio, answers, name: r.name }), quality, picture, signal: abort.signal })
+        ? await provider.edit({ prompt: buildRevisionPrompt({ studio: r.experience.studio, concept, change: r.change ?? '', name: r.name }), image: previous.bytes, mimeType: previous.mimeType, quality, picture, signal: abort.signal })
+        : await provider.generate({ prompt: buildPortraitPrompt({ studio: r.experience.studio, concept, name: r.name }), quality, picture, signal: abort.signal })
     } catch { result = { ok: false, code: 'studio_image_unavailable', elapsedMs: 0 } }
     if (run !== r || abort.signal.aborted) return
     try { input.imageResult?.(result.ok ? { ok: true } : { ok: false, code: result.code }) } catch { /* diagnostics only */ }
@@ -266,6 +284,7 @@ export function createStudioRuntime(input: {
       input.report('studio_revision_unchanged', 'degraded')
       fail(r, 'studio_provider_contract', true); return
     }
+    r.concept = selectedConcept
     input.report(kind === 'edit' ? 'studio_revision_ready' : 'studio_image_ready', 'info', result.elapsedMs)
     const id = randomUUID()
     if (r.imageId && kind === 'generate') images.delete(r.imageId)
@@ -405,6 +424,7 @@ export function createStudioRuntime(input: {
       if (r.revisionsLeft <= 0) return reply('rejected', 'studio_no_changes_left', prompt(r, 'noChangesLeft'))
       r.revisionsLeft -= 1
       r.change = request.change.trim()
+      r.revisionMode = request.mode ?? 'refine'
       r.phase = 'revising'
       r.abort = undefined
       input.report('studio_revision_requested')

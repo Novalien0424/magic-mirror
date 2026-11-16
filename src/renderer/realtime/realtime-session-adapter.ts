@@ -825,7 +825,7 @@ export function createRealtimeSession(
         const preamble = spokenResponses.has(toolCallResponse)
         studioRevisionAnnounced = preamble
         try {
-          const result = await studioTool({ action: 'revise', change: args.change as string })
+          const result = await studioTool({ action: 'revise', change: args.change as string, mode: args.mode === 'reimagine' ? 'reimagine' : 'refine' })
           if (result.outcome !== 'accepted') studioRevisionAnnounced = false
           return result.outcome === 'accepted' && (studioStep || preamble) ? { ...result, spoken: true } : result
         } catch (error) { studioRevisionAnnounced = false; throw error }

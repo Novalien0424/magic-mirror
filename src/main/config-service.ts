@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { avatarCatalogSchema, validateAvatarReferences } from './avatar/avatar-config'
 import { avatarCatalogFor, projectActiveAvatar } from '../shared/avatar-profiles'
 import { parsePresentation, type PresentationConfig } from '../shared/presentation'
+import { defaultExperience, type StudioSettings } from '../shared/portrait-studio'
 import { isFolderMediaId } from '../shared/media-folders'
 import type { ConfigDiff, FieldError, MirrorConfig, MirrorEvent } from '../shared/types'
 import {
@@ -1052,6 +1053,33 @@ export function makeConfigDiff(from: MirrorConfig, to: MirrorConfig): ConfigDiff
     changed,
     nonModelChanges: changed.some((change) => !MODEL_PATHS.has(change.path)),
   }
+}
+
+/** Main-owned maintenance operation: update one avatar's Studio in both slots
+ * without publishing unrelated draft work. Caller holds the stopped-runtime lease. */
+export async function updateAvatarStudioSettings(options: ConfigServiceOptions, avatarId: string,
+  update: (studio: StudioSettings, slot: 'active' | 'draft') => StudioSettings): Promise<void> {
+  const resolved = resolveConfigOptions(options)
+  const slots = await resolveSlots(resolved)
+  const before = await readRawSlots(resolved)
+  const revision = nextRevision(resolved, 'publish', slots.active.configVersion)
+  const patched = (slot: 'active' | 'draft'): MirrorConfig => {
+    const config = slots[slot], catalog = avatarCatalogFor(config)
+    if (!catalog.avatars.some(avatar => avatar.id === avatarId)) throw new ConfigServiceError('config_schema_invalid')
+    const candidate = { ...config, configVersion: revision, avatarCatalog: { ...catalog,
+      avatars: catalog.avatars.map(avatar => {
+        if (avatar.id !== avatarId) return avatar
+        const experience = avatar.experience ?? defaultExperience()
+        return { ...avatar, experience: { ...experience, studio: update(structuredClone(experience.studio), slot) } }
+      }) } }
+    const parsed = mirrorConfigSchema.safeParse(candidate)
+    if (!parsed.success) throw new ConfigServiceError('config_schema_invalid')
+    return parsed.data as MirrorConfig
+  }
+  const active = patched('active'), draft = patched('draft')
+  await writeSlotTransaction(resolved, { active: serializeConfig(active), draft: serializeConfig(draft),
+    previous: serializeConfig(slots.active) }, before, 'publish')
+  emitConfigEvent(resolved.events, 'config_published', 'success', `operation=publish_avatar_studio;active_version=${revision}`)
 }
 
 export function createConfigService(options: ConfigServiceOptions): ConfigService {

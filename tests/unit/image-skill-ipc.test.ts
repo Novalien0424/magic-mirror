@@ -1,3 +1,4 @@
+import { SAMPLE_STUDIO_CONCEPT } from '../../src/shared/studio-concept'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { registerImageSkillIpc } from '../../src/main/studio/image-skill-ipc'
 import { IMAGE_SKILL, type ImageSkillEvent, type ImageSkillReply, type ImageSkillRequest } from '../../src/shared/image-skill'
@@ -15,7 +16,7 @@ function harness(frame: CameraSnapshot | null, enabled = true) {
   let handler!: (event: unknown, ...args: unknown[]) => unknown
   const runtime = registerImageSkillIpc({ ipcMain: { handle: (_channel, fn) => { handler = fn } }, authorize: event => event === 'mirror',
     snapshot: () => ({ lifecycle: 'active', ...identity }), enabled: () => enabled,
-    images: { provider, usable: async () => true, status: async () => ({ status: 'signed_in' }) }, studio: {
+    images: { concepts: { select: async () => ({ ok: true, concept: SAMPLE_STUDIO_CONCEPT, elapsedMs: 0 }) }, provider, usable: async () => true, status: async () => ({ status: 'signed_in' }) }, studio: {
       active: () => false, canUsePhoto: () => false, usePhoto: () => false, clearPhoto: () => false } as unknown as StudioIpc,
     quality: async () => 'medium', capture, report, activity: vi.fn(), dispatch: command => {
       if (command.type === 'image_event') events.push(command.event)

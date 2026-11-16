@@ -3,7 +3,7 @@ import { classifyImageFailure, createCodexImageProvider, imageMimeType } from '.
 import type { ChatgptCredentialSource } from '../../src/main/chatgpt-auth/token-file'
 
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(16)])
-const settings = { baseUrl: 'https://chatgpt.com/backend-api/codex/', modelId: 'gpt-image-2.5-flare', size: '1024x1536', stickerSize: '1024x1024', timeoutMs: 5000, originator: 'magic_mirror', userAgent: 'MagicMirror/test' }
+const settings = { baseUrl: 'https://chatgpt.com/backend-api/codex/', modelId: 'gpt-image-2.6-flare', size: '1024x1536', stickerSize: '1024x1024', timeoutMs: 5000, originator: 'magic_mirror', userAgent: 'MagicMirror/test' }
 const ok = () => new Response(JSON.stringify({ data: [{ b64_json: PNG.toString('base64') }] }))
 function credentials(overrides: Partial<ChatgptCredentialSource> = {}): ChatgptCredentialSource {
   return { get: async () => ({ accessToken: 'token-a', accountId: 'acct-1' }), refreshAfterRejection: async () => ({ accessToken: 'token-b', accountId: 'acct-1' }),
@@ -18,7 +18,7 @@ describe('Codex backend portrait image provider', () => {
     expect(result).toMatchObject({ ok: true, mimeType: 'image/png' })
     const [url, init] = fetchImpl.mock.calls[0]!
     expect(url).toBe('https://chatgpt.com/backend-api/codex/images/generations')
-    expect(JSON.parse(init!.body as string)).toEqual({ prompt: 'p', model: 'gpt-image-2.5-flare', n: 1, quality: 'medium', size: '1024x1536', background: 'opaque' })
+    expect(JSON.parse(init!.body as string)).toEqual({ prompt: 'p', model: 'gpt-image-2.6-flare', n: 1, quality: 'medium', size: '1024x1536', background: 'opaque' })
     expect(init!.headers).toMatchObject({ Authorization: 'Bearer token-a', 'ChatGPT-Account-ID': 'acct-1', originator: 'magic_mirror' })
   })
 

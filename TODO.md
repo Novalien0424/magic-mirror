@@ -6,6 +6,13 @@ rulings. Historical failures remain in linked reports, even when later repaired.
 
 ## Reliability and product gaps
 
+- [ ] **Studio transparent-edge quality (11-15).** Concept-first painterly art and
+  functional journeys are deployed, but 3/5 final live samples fail the no-pale-
+  fringe/halo check; sparse sample also has glow/tight cropping. Alpha transparency
+  is present. Improve isolation/padding without eroding fine artwork; retain failed
+  evidence and obtain owner visual acceptance. [Audit](docs/testing/studio-art-direction-plan-2026-11-15.md).
+
+
 - [ ] **Studio operator rescue.** Speech-failure recovery is implemented (10-31:
   one retry per fixed line, then the visit continues with `studio_speech_skipped`).
   The visible safe exit is done (11-08: Console "End this visit"). Still open: a current-visit

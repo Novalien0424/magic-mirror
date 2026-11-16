@@ -1,3 +1,4 @@
+import { SAMPLE_STUDIO_CONCEPT } from '../../src/shared/studio-concept'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import { mirrorConfigSchema } from '../../src/main/config-service'
@@ -96,7 +97,7 @@ describe('Portrait Studio IPC', () => {
     const credentials: ChatgptCredentialSource = { get: async () => options.auth === 'missing' ? null : ({ accessToken: 't', accountId: 'a' }),
       refreshAfterRejection: async () => null, status: async () => ({ status: options.auth ?? 'signed_in' }), keepAlive: options.keepAlive }
     const fetchImpl = options.fetchImpl ?? vi.fn(async () => new Response('', { status: 500 })) as unknown as typeof fetch
-    const images = createAvatarImageService({ credentials, keepSignedIn: options.keepSignedIn, report: reason => reports.push(reason), fetchImpl })
+    const images = createAvatarImageService({ concepts: { select: async () => ({ ok: true, concept: SAMPLE_STUDIO_CONCEPT, elapsedMs: 0 }) }, credentials, keepSignedIn: options.keepSignedIn, report: reason => reports.push(reason), fetchImpl })
     // Registered through the Remote Console registry, which marks its own events as remote.
     const registry = createWebConsoleRegistry({ handle: (channel, handler) => { handlers.set(channel, handler) }, on: () => undefined })
     registerStudioIpc({

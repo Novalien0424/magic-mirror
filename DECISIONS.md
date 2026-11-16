@@ -1,5 +1,38 @@
 # Magic Mirror — Durable rulings
 
+## 2026-11-15 — Selective concepts and borderless fantasy art (owner, later ruling)
+
+- Supersedes today's mandatory white cutting border and all-answer redraw wording.
+  Transparent output uses natural subject edges, without an imposed white border,
+  halo or badge. Explicit visitor border requests remain possible in Conversation.
+- Studio first selects a coherent symbolic concept from current-visit answers;
+  answers are inspiration, not mandatory depicted objects. The image renderer gets
+  the selected brief. No invented personal biography or psychological diagnosis.
+- Default and current Raven art direction: sophisticated hand-painted 2D fantasy
+  animation concept art with modern cool attitude; no forced cute mascot/vector look.
+- Local revisions preserve the selected concept; explicit reimagination can choose
+  a new interpretation. Concepts are transient Main state, with cancellation and
+  session ownership. Dedicated versioned concept model/prompt, no silent fallback.
+- Apply only requested published/draft art fields, preserve unrelated authored work,
+  and record reasons, exact changed paths, failed evidence and QA/deployment results.
+  [Plan and execution audit](docs/testing/studio-art-direction-plan-2026-11-15.md).
+
+## 2026-11-15 — Studio sticker format and operator art style (owner)
+
+Owner accepted the image-prompt audit recommendations and requested implementation.
+
+- Sticker defaults define square composition, transparent background, padding and
+  a continuous white cutting border. Operator Art style controls medium,
+  proportions, shading, texture and internal linework. Supersedes the mandatory
+  flat-vector/bold-outline/no-gradient constraints in the 2026-10-20 sticker ruling.
+- Preserve custom templates; if the opening omits `{{style}}`, append the versioned
+  Art style instruction rather than silently dropping the operator's style.
+- Keep symbolic reflective answers, the visitor-data guard and redraw-from-meaning
+  revisions. Remove the default identifiable-person prohibition that conflicts with
+  an explicitly consented photo reference; consent and photo ownership are unchanged.
+- Use the verified fast family `gpt-image-2.6-flare`. No supported moving latest-fast
+  alias was verified; do not substitute deprecated `chatgpt-image-latest`.
+
 ## 2026-11-15 — Photo: several people allowed, nearest whole face (owner)
 
 Owner: "multiple people is allowed. we will lock into the nearest people that has the full face"

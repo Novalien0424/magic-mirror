@@ -341,7 +341,7 @@
       "availability": "studio",
       "routing": "model_intent",
       "description": "Repaint the displayed picture with one change the visitor asked for.",
-      "parameters": { "type": "object", "properties": { "change": { "type": "string", "description": "The requested change in the visitor's own words, up to 120 characters." } }, "required": ["change"], "additionalProperties": false },
+      "parameters": { "type": "object", "properties": { "mode": { "type": "string", "enum": ["refine", "reimagine"], "description": "refine for a local change to the current concept; reimagine only when the visitor explicitly asks for a new interpretation or different concept." }, "change": { "type": "string", "description": "The requested change in the visitor's own words, up to 120 characters." } }, "required": ["change", "mode"], "additionalProperties": false },
       "rules": {
         "useWhen": "After the picture is shown, when the visitor asks for a change to it, call studio_revise with that change.",
         "avoidWhen": "Do not call it before a picture is shown, or for general comments that are not a change request.",

@@ -2,6 +2,32 @@
 
 ## Current delivery
 
+**Concept-first art deployed 11-15 16:32; visual edge issue remains:** Main now
+selects a symbolic concept before rendering; raw answer checklists are removed,
+refine/reimagine differ, and Raven active/draft version24 use sophisticated
+hand-painted fantasy style. White-border requirements removed. Unrelated settings
+and medium/low quality difference preserved. Functional QA: 345 focused tests,
+typechecks/build, native-camera Studio26/26 and Conversation image15/15 pass.
+Final five-image matrix: all requests/alpha/style/concept checks pass, but clean
+edges fail3/5; manual review confirms pale fringes, and sparse sample has wider
+glow/tight crop. Strict visual QA is NOT accepted. Failures retained, RAM review
+images deleted. Final source stamp `887a8ae2…`, Main/renderer ready; calibrated
+audio restored and normal runtime running.
+[Plan, reasons, failures and full evidence](docs/testing/studio-art-direction-plan-2026-11-15.md).
+
+**Studio prompts implemented/deployed, 11-15 15:49:** sticker format is separated
+from operator art style; custom frames cannot silently omit Art style. Default
+photo-likeness contradiction removed, revisions simplified, reflective examples
+and new-session help updated. `gpt-image-2.6-flare` deployed; no supported moving
+latest-fast alias verified. Checks: 89 prompt/runtime/editor tests + 7 judge-input
+tests, full typechecks/build; native-camera guided journey **26/26**. Initial
+visual comparison exposed scenery inside the border; after composition correction,
+**3/3** affected real engraving/watercolor generation/edit checks passed square,
+alpha, medium, border and no-scene criteria via configured visual judge. Earlier
+flow pass reused for the final wording-only correction. Final build/Main/renderer
+ready, outputs restored; published/draft hashes unchanged. Real-person likeness
+and repeated visual reliability unverified. [Plan, failures and evidence](docs/testing/studio-prompt-implementation-2026-11-15.md).
+
 **Photo: several people allowed, deployed 11-15 15:29** (owner: "multiple
 people is allowed. we will lock into the nearest people that has the full face";
 [ruling](DECISIONS.md)): the still now reports where each clear face is; with several people
@@ -61,8 +87,9 @@ New Codex sessions use the installed defaults; existing chats retain their model
 
 Runtime: `field/macmini-deploy` at the commit with this handoff. Canonical Mac, user
 LaunchAgent, macOS 27.2.1 since the owner's upgrade and reboot at 18:13 Taipei 11-14. The app is
-running (agent's START 15:29 11-15 after the photo change, Dormant, no loop playing); the 15:24
-11-15 build is deployed (it includes the uncommitted Studio image-model change, see above);
+running (agent's START 16:32:36 11-15 after the concept-first art change, no loop playing); the
+16:30 11-15 build is deployed and matches this commit (stamp checked 11-16 13:04; Codex's Studio
+work above was committed by Claude on the owner's word, 11-16);
 speakers at the defaults
 (Jabra 80% in normal playback and in its call volume, A1 65%, Edifiers 50%, Mac mini speaker 1%).
 A1 joined again at 14:44:35 and 15:04:46 (below). Products and stories: [PRD](PRD.md); open work:
@@ -146,6 +173,14 @@ Earlier delivery, detail in the archived handoff and the linked reports:
   their microphone is open ([evidence](docs/testing/online-songs-2026-11-07.md)).
 
 ## Last observed runtime — not a live health guarantee
+
+- 11-15 16:32:36 START after the concept-first art build: Main/renderer ready, TV display
+  `reason=match`, route settled in 2.2 s. Still running 11-16 13:04; levels read back at the
+  defaults (Jabra 80%, A1 65%).
+
+- 11-15 15:49:46 START after final Studio prompt build: Main/renderer ready, target TV
+  matched, audio route settled in 2.267 s. QA speaker restore/readback passed; saved
+  published and draft settings unchanged. Build stamp matches final source/output.
 
 - 11-15 14:37:09 START after the camera work: Main/renderer ready, TV display `reason=match`,
   route settled in 1.1 s with the Jabra and both Edifiers, no A1 (off since 14:08:15); levels

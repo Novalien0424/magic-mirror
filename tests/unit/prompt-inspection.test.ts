@@ -44,6 +44,17 @@ describe('file-sourced prompt inspection', () => {
     expect(view.pages.Session.find(s => s.title.startsWith('Interactive Studio agent instructions'))!.content).toContain('After the name there are 4 studio questions; the application gives each one in the tool guidance.')
   })
 
+  it('shows the concept stage separately from illustrative rendering without visitor answers', () => {
+    const avatar = newAvatar('fixture')
+    const session = inspectAvatarPrompts(avatar, []).pages.Session
+    const concept = session.find(section => section.title.startsWith('Interactive Studio concept selection'))!
+    expect(concept.source).toBe('resources/config/studio-concept.v1.json#instructions')
+    expect(concept.content).toContain('You may omit any answer')
+    const rendering = session.find(section => section.title.includes('first picture (illustrative concept)'))!
+    expect(rendering.content).toContain('Selected subject and real-world anchor:')
+    expect(rendering.content).not.toContain('I moved to a new city')
+  })
+
   it('does not reinterpret template markers or markup inside operator values', () => {
     const value = '<script>alert(1)</script>{{text}}'
     expect(renderPrompt('performance', { speakingStyle:value, text:'Exact.' })).toContain(value)

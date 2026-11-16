@@ -69,6 +69,7 @@ export function registerStudioIpc(deps: {
   let handling: Set<string> | null = null
   const runtime = createStudioRuntime({
     provider: () => provider,
+    concepts: deps.images.concepts,
     dispatch: command => deps.dispatch(command),
     activity: (kind, runId) => deps.activity(kind, runId),
     report: (reason, status, timingMs) => { handling?.add(reason); deps.report(reason, status ?? 'info', timingMs) },
@@ -264,10 +265,12 @@ export function registerStudioIpc(deps: {
     if (!deps.imageEnabled(currentIdentity() ?? undefined)) return { ok: true, value: { status: await status(), test: { ok: false, code: 'studio_skill_disabled', elapsedMs: 0 } } }
     const experience = await deps.experience().catch(() => null)
     if (!experience) return { ok: true, value: { status: await status(), test: { ok: false, code: 'studio_config_unavailable', elapsedMs: 0 } } }
-    const answers = experience.studio.questions.map((question, index) => ({ slot: question.slot, imageLine: question.imageLine,
+    const answers = experience.studio.questions.map((question, index) => ({ question: question.en, ...(question.imageLine ? { context: question.imageLine } : {}),
       answer: STUDIO_SAMPLE_ANSWERS[index % STUDIO_SAMPLE_ANSWERS.length]! }))
+    const selected = await deps.images.concepts.select({ operation: 'initial', answers })
+    if (!selected.ok) { deps.report('studio_test_concept_failed', 'degraded', selected.elapsedMs); return { ok: true, value: { status: await status(), test: { ok: false, code: selected.code, elapsedMs: selected.elapsedMs } } } }
     const name = experience.studio.askName === false ? '' : 'Raven'
-    const result = await provider.generate({ prompt: buildPortraitPrompt({ studio: experience.studio, answers, name }), quality: experience.studio.quality, picture: studioPictureType(experience.studio) })
+    const result = await provider.generate({ prompt: buildPortraitPrompt({ studio: experience.studio, concept: selected.concept, name }), quality: experience.studio.quality, picture: studioPictureType(experience.studio) })
     // A successful test picture resumes visits paused by a plan-limit or sign-in failure.
     noteImage(result)
     deps.report(result.ok ? 'studio_test_ready' : result.code, result.ok ? 'info' : 'degraded', result.elapsedMs)
